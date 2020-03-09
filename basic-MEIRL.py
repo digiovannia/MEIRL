@@ -384,9 +384,32 @@ Need to average over sample betas in the
 following four functions
 '''
 
-def 
+def rho(state_space):
+    return 1/len(state_space)
 
-def phi_grad(betas, phi, alpha, sigsq, theta, R_all, E_all, Ti):
+def uniform_action_sample(action_space, M):
+    return list(np.random.choice(action_space, M))
+
+def logZ(betas, impa, theta, data, M, TP, action_space):
+    '''
+    Importance sampling approximation
+
+    May want to vectorize vec_expect_reward better to avoid 2 for-loops here
+    '''
+    reward_est = lin_rew_func(theta)
+    R_all = np.array([[vec_expect_reward(reward_est, data[i][0],
+                      [impa[j]]*Ti, TP, state_space) for j in range(M)]
+                      for i in range(m)])
+    expo = np.exp(np.einsum('ijk,ilk->ijlk', betas, R_all))
+    volA = len(action_space) # m x N x Ti
+    lvec = np.log(volA*np.mean(expo,axis=2)) # for all times
+    logZvec = lvec.sum(axis=2)
+    # This appears to approximate the true logZ for the
+    # grid world with 4 actions very well!
+    return logZvec # m x N; Not averaged over beta!
+
+def phi_grad(betas, phi, alpha, sigsq, theta, R_all, E_all, Ti,
+             logZvec):
     '''
     Output is m x 2
 
@@ -401,7 +424,11 @@ def phi_grad(betas, phi, alpha, sigsq, theta, R_all, E_all, Ti):
     phigrad1 = num1/den1[:,None] # may need to do this after mean
     num2 = np.einsum('ijk,ijk->ij', vec, vec)
     phigrad2 = -Ti/(2*den1)[:,None] + num2/((2*den1**2)[:,None])
-    logp = ...
+    gvec = betas - aE[:,None,:]
+    gnorm = np.einsum('ijk,ijk->ij', gvec, gvec)
+    p1 = np.log(rho(state_space)) - Ti/2*np.log(2*np.pi*sigsq)[:,None] - 1/(2*sigsq)[:,None]*gnorm
+    p2 = np.einsum('ijk,ik->ij', betas, R_all) - logZvec # + logT
+    logp = p1 + p2
     logq = ...
     pass
 
@@ -424,18 +451,20 @@ def theta_grad(betas):
     pass
 
 def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m):
+         action_space, B, m, M):
     '''
     Need the expert trajectories
 
     1) Init theta, alpha, sigsq, phi
     2) 
     '''
+    impa = uniform_action_sample(action_space, M)
     for n in range(N):
         data = traj_data[n]
         R_all, E_all = RE_all(theta, data, TP, state_space, m)
-        beta_samples = sample_all_MV_beta(phi, alpha, sigsq, theta, R_all, E_all,
+        betas = sample_all_MV_beta(phi, alpha, sigsq, theta, R_all, E_all,
                                           data, TP, state_space, B, m)
+        logZvec = logZ(betas, impa, theta, data, M, TP, action_space)
         
 
 def radial(s, c):
