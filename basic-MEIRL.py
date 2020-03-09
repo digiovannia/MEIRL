@@ -408,6 +408,14 @@ def logZ(betas, impa, theta, data, M, TP, action_space):
     # grid world with 4 actions very well!
     return logZvec # m x N; Not averaged over beta!
 
+def traj_TP(data, TP):
+    '''
+    data = m x 2 x Ti
+
+    Computes TPs for 
+    '''
+    pass
+
 def phi_grad(betas, phi, alpha, sigsq, theta, R_all, E_all, Ti,
              logZvec):
     '''
