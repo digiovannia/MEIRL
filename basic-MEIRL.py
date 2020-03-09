@@ -25,7 +25,7 @@ N = 10
 Ti = 50
 
 # Making gridworld
-state_space = [(i,j) for i in range(D) for j in range(D)]
+state_space = np.array([(i,j) for i in range(D) for j in range(D)])
 action_space = list(range(4))
 #rewards = np.random.rand(D,D)
 rewards = np.ones((D,D))
@@ -42,6 +42,9 @@ def act_to_coord(a):
     d = {0: (-1, 0), 1: (0, 1), 2: (1, 0),
          3: (0,-1)}
     return d[a]
+
+def state_index(tup):
+    return D*tup[0] + tup[1]
 
 def state_tuples_to_num(state_space, s):
     return [state_space.index(state) for state in s]
@@ -62,17 +65,17 @@ def transition(state_space, action_space):
                 for y2 in range(D):
                     if ((x2 == x1 + action[0]) and
                         (y2 == y1 + action[1])):
-                        TP[s,a,state_space.index((x2,y2))] += 1 - MOVE_NOISE
+                        TP[s,a,state_index((x2,y2))] += 1 - MOVE_NOISE
                     if manh_dist((x2, y2), state_space[s]) == 1:
-                        TP[s,a,state_space.index((x2,y2))] += MOVE_NOISE/4
-                    if (x2, y2) == state_space[s]:
+                        TP[s,a,state_index((x2,y2))] += MOVE_NOISE/4
+                    if ((x2, y2) == state_space[s]).all():
                         count = (x2 == 0 or x2 == D-1) + (y2 == 0 or y2 == D-1)
-                        TP[s,a,state_space.index((x2,y2))] += count*MOVE_NOISE/4
+                        TP[s,a,state_index((x2,y2))] += count*MOVE_NOISE/4
                         if ((x1 + action[0] < 0) or
                             (x1 + action[0] >= D) or
                             (y1 + action[1] < 0) or
                             (y1 + action[1] >= D)):
-                            TP[s,a,state_space.index((x2,y2))] += 1 - MOVE_NOISE
+                            TP[s,a,state_index((x2,y2))] += 1 - MOVE_NOISE
     return TP
 
 def coord(x):
@@ -216,6 +219,10 @@ def eta(st):
                      abs(st[1]-4), INTERCEPT])
 
 def eta_mat(s):
+    '''
+    FIX THIS
+    '''
+    s = [state_space[state] for state in s]
     s_arr = np.array(s)
     return np.array([abs(s_arr[:,0]-1), abs(s_arr[:,1]-1), abs(s_arr[:,0]-4),
                      abs(s_arr[:,1]-4), INTERCEPT*np.ones(len(s))])
@@ -339,8 +346,8 @@ def vec_expect_reward(rewards, s, a, TP, state_space):
 
     May want to make this more vectorized...
     '''
-    si = [state_space.index(st) for st in s]
-    return TP[si, a].dot(np.ravel(rewards))
+    #si = [state_space.index(st) for st in s]
+    return TP[s, a].dot(np.ravel(rewards))
 
 def sample_beta(i, phi, alpha, sigsq, theta, st, at, TP, state_space):
     '''
