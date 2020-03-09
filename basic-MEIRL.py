@@ -43,10 +43,13 @@ def act_to_coord(a):
          3: (0,-1)}
     return d[a]
 
+def state_tuples_to_num(state_space, s):
+    return [state_space.index(state) for state in s]
+
 def transition(state_space, action_space):
     # 0 index = start state
-    # 1 = next state
-    # 2 = action
+    # 1 = action
+    # 2 = next state
     S = len(state_space)
     A = len(action_space)
     TP = np.zeros((S, A, S))
@@ -412,7 +415,7 @@ def traj_TP(data, TP):
     '''
     data = m x 2 x Ti
 
-    Computes TPs for 
+    Computes TPs for s1, a1 to s2, ..., st-1, at-1 to st
     '''
     pass
 
@@ -473,7 +476,7 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
         betas = sample_all_MV_beta(phi, alpha, sigsq, theta, R_all, E_all,
                                           data, TP, state_space, B, m)
         logZvec = logZ(betas, impa, theta, data, M, TP, action_space)
-        
+    pass
 
 def radial(s, c):
     return np.exp(-5*((s[0]-c[0])**2+(s[1]-c[1])**2))
@@ -555,9 +558,14 @@ def synthetic_traj(rewards, policy, Ti, state_space, action_space, init_state_sa
     a = np.random.choice(action_space, p=policy[s])
     states, actions, reward_list = episode(s,Ti,policy,rewards,
                               grid_step,a=a)
+    states = state_tuples_to_num(state_space, states)
     return states, actions, reward_list
 
 def see_trajectory(reward_map, state_seq):
+    '''
+    Input state seq is in index form; can transform to tuples
+    '''
+    state_seq = [state_space[s] for s in state_seq]
     for s in state_seq:
         sns.heatmap(reward_map)
         plt.annotate('*', (s[1]+0.2,s[0]+0.7), color='b', size=24)
@@ -578,7 +586,8 @@ def make_data(Q, alphas, sigsqs, reward_str, N, Ti):
     ]
     return trajectories
 
-data = make_data(Q, ex_alphas, ex_sigsqs, rewards, N, Ti)
+traj_data = make_data(Q, ex_alphas, ex_sigsqs, rewards, N, Ti)
+data = traj_data[0] # for testing
 # first index is n=1 to N
 # second index is expert
 # third is states, actions
@@ -595,51 +604,6 @@ psi_s = np.random.rand(m)
 prior = (psi_t1, psi_t2, psi_a1, psi_a2, psi_s)
 thetas, alphas, sigsqs = variational(prior)
 '''
-
-def psi_gradient(thetas, alphas, sigsqs, psi):
-    '''
-    Given samples of params from the variational distribution,
-    computes gradient wrt each component of psi.
-    '''
-    psi_t1, psi_t2, psi_a1, psi_a2, psi_s = psi
-    psi_t2_inv = np.linalg.inv(psi_t2)
-    psi_a2_inv = np.linalg.inv(psi_a2) # stack of inverses
-    diff_t1 = psi_t1 - thetas
-    diff_a1 = psi_a1 - thetas # (m x p)
-    psi_t1_g = 2*psi_t2_inv.dot(diff_t1)
-    psi_t2_g = psi_t2_inv.dot(1/2*np.outer(diff_t1, diff_t1).dot(psi_t2_inv) - np.eye(p))
-    psi_a1_g = np.einsum('ijk,ik->ij', psi_a2_inv, diff_a1) #2*psi_a2_inv.dot(diff_a1)
-    a_out = 1/2*np.einsum('ij,ik->ijk', diff_a1, diff_a1)
-    a_in = np.einsum('ijk,ikl->ijl', a_out, psi_a2_inv)
-    psi_a2_g = np.einsum('ijk,ikl->ijl', psi_a2_inv, (a_in - np.eye(p)))
-    psi_s_g = 1/psi_s - sigsqs
-    return psi_t1_g, psi_t2_g, psi_a1_g, psi_a2_g, psi_s_g
-
-def AVO(psi, Q_star, ex_alphas, ex_sigsqs, rewards, state_space,
-        action_space, init_policy, init_Q, gam, delta_tol, rate,
-        eps, K, M, N, Ti, T):
-    '''
-    Init:
-    * theta, alpha, sigsq, phi, psi
-
-    Inputs:
-    * psi = prior on psi, 5-tuple
-    ###* true_data = m-list of N-lists of state-seq, action-seq tuples
-
-    Hyperparams:
-    * M = minibatch size (32?)
-    '''
-    delta = np.Inf
-    thetas, alphas, sigsqs = variational(psi)
-    while delta > eps:
-        true_data = make_data(Q_star, ex_alphas, ex_sigsqs,
-                              rewards, N, Ti)
-        reward_str, Qh = Q_est(thetas, gam, T,
-                               state_space, action_space,
-                               init_policy, init_Q, rate=rate,
-                               eps=eps, K=K, Qlearn=True)
-        fake_data = make_data(Qh, alphas, sigsqs, reward_str, N, Ti)
-    pass
 
 # Testing
 theta_h = np.random.rand(5)
