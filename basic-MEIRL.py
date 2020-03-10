@@ -23,6 +23,7 @@ INTERCEPT = 10
 WEIGHT = 2
 N = 10
 Ti = 50
+B = 20
 
 # Making gridworld
 state_space = np.array([(i,j) for i in range(D) for j in range(D)])
@@ -541,29 +542,32 @@ def traj_TP(data, TP, Ti, m):
     s2_thru_sTi = TP[data[:,0,:(Ti-1)],data[:,1,:(Ti-1)]]
     return s2_thru_sTi[np.arange(m)[:,None], np.arange(Ti-1), data[:,0,1:]]
 
-def phi_grad(betas, phi, alpha, sigsq, theta, R_all, E_all, Ti,
-             logZvec):
-    '''
-    Output is m x 2
+impa = uniform_action_sample(action_space, M)
+R_all, E_all = RE_all(theta, data, TP, state_space, m)
+betas = sample_all_MV_beta(phi, alpha, sigsq, theta, R_all, E_all,
+                           data, TP, state_space, B, m)
+logZvec = logZ(betas, impa, theta, data, M, TP, action_space)
 
-    Need to take mean only after multiplying by log probs
+def phi_grad(betas, phi, alpha, sigsq, theta, data, R_all,
+             E_all, Ti, logZvec, m):
+    '''
+    Output is 2 x m; expectation is applied
     '''
     one = np.ones(Ti)
     aE = np.einsum('ij,ijk->ik', alpha, E_all)
     vec = betas - (sigsq[:,None]*R_all + aE + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:]
     num1 = vec.dot(one)
-    #num = np.mean(num, axis=1)
     den1 = sigsq + phi[:,1]
-    phigrad1 = num1/den1[:,None] # may need to do this after mean
+    phigrad1 = num1/den1[:,None]
     num2 = np.einsum('ijk,ijk->ij', vec, vec)
     phigrad2 = -Ti/(2*den1)[:,None] + num2/((2*den1**2)[:,None])
     gvec = betas - aE[:,None,:]
     gnorm = np.einsum('ijk,ijk->ij', gvec, gvec)
     p1 = np.log(rho(state_space)) - Ti/2*np.log(2*np.pi*sigsq)[:,None] - 1/(2*sigsq)[:,None]*gnorm
-    p2 = np.einsum('ijk,ik->ij', betas, R_all) - logZvec # + logT
-    logp = p1 + p2
-    logq = ...
-    pass
+    logT = np.log(traj_TP(data, TP, Ti, m))
+    p2 = np.einsum('ijk,ik->ij', betas, R_all) - logZvec + np.sum(logT, axis=1)[:,None]
+    logdens = p1 + p2 -Ti/2*np.log(2*np.pi*den1)[:,None] - num2/((2*den1)[:,None])
+    return np.array([(phigrad1 * logdens).mean(axis=1), (phigrad2 * logdens).mean(axis=1)])
 
 def alpha_grad(betas):
     '''
