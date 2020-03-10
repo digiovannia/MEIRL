@@ -27,7 +27,6 @@ Ti = 50
 # Making gridworld
 state_space = np.array([(i,j) for i in range(D) for j in range(D)])
 action_space = list(range(4))
-#rewards = np.random.rand(D,D)
 rewards = np.ones((D,D))
 rewards[0,0] = 5
 rewards[D-1,D-1] = 5
@@ -47,6 +46,9 @@ def state_index(tup):
     return D*tup[0] + tup[1]
 
 def state_tuples_to_num(state_space, s):
+    '''
+    will need to fix
+    '''
     return [state_space.index(state) for state in s]
 
 def transition(state_space, action_space):
@@ -89,6 +91,7 @@ def grid_step(s, a):
     flip = np.random.rand()
     if flip < MOVE_NOISE:
         a = np.random.choice([0,1,2,3])
+    '''
     if a == 0:
         new_state = (coord(s[0]-1), s[1])
     if a == 1:
@@ -97,7 +100,9 @@ def grid_step(s, a):
         new_state = (coord(s[0]+1), s[1])
     if a == 3:
         new_state = (s[0], coord(s[1]-1))
-    return new_state
+    '''
+    new_state = s + act_to_coord(a)
+    return np.minimum(np.maximum(new_state, 0), D-1)
 
 def episode(s,T,policy,rewards,step_func,a=-1):
     '''
@@ -109,19 +114,18 @@ def episode(s,T,policy,rewards,step_func,a=-1):
     from current state and action
     '''
     states = [s]
-    if a >= 0:
-        actions = [a]
-    else:
-        actions = [np.random.choice(action_space, p=policy[s])]
+    if a < 0:
+        a = np.random.choice(action_space, p=policy[tuple(s)])
+    actions = [a]
     reward_list = [0]
-    for _ in range(1,T):
+    for _ in range(T-1):
         s = step_func(s,a)
         states.append(s)
-        r = rewards[s]
+        r = rewards[tuple(s)]
         reward_list.append(r)
-        a = np.random.choice(action_space, p=policy[s])
+        a = np.random.choice(action_space, p=policy[tuple(s)])
         actions.append(a)
-    reward_list.append(rewards[s])
+    reward_list.append(rewards[tuple(s)])
     return states, actions, reward_list
 
 def stoch_policy(det_policy, action_space):
