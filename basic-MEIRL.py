@@ -571,32 +571,25 @@ def logp(state_space, Ti, sigsq, gnorm, data, TP, m, betas, R_all, logZvec):
 def logq(Ti, denom, vecnorm):
     return -Ti/2*np.log(2*np.pi*denom)[:,None] - vecnorm/((2*denom)[:,None])
 
-def phi_grad(betas, phi, alpha, sigsq, theta, data, R_all,
-             E_all, Ti, logZvec, m):
+def phi_grad(vec, one, denom, vecnorm, lp, lq):
     '''
     Output is m x 2; expectation is applied
+
+    Will need to make sure feasible
     '''
-    one = np.ones(Ti)
-    aE = np.einsum('ij,ijk->ik', alpha, E_all)
-    vec = betas - (sigsq[:,None]*R_all + aE + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:]
     num1 = vec.dot(one)
-    denom = sigsq + phi[:,1]
     phigrad1 = num1/denom[:,None]
-    vecnorm = np.einsum('ijk,ijk->ij', vec, vec)
     phigrad2 = -Ti/(2*denom)[:,None] + vecnorm/((2*denom**2)[:,None])
-    #gvec = betas - aE[:,None,:]
-    #gnorm = np.einsum('ijk,ijk->ij', gvec, gvec)
-    #p1 = np.log(rho(state_space)) - Ti/2*np.log(2*np.pi*sigsq)[:,None] - 1/(2*sigsq)[:,None]*gnorm
-    #logT = np.log(traj_TP(data, TP, Ti, m))
-    #p2 = np.einsum('ijk,ik->ij', betas, R_all) - logZvec + np.sum(logT, axis=1)[:,None]
-    logdens = p1 + p2 -Ti/2*np.log(2*np.pi*denom)[:,None] - vecnorm/((2*denom)[:,None])
+    logdens = lp - lq
     return np.array([(phigrad1 * logdens).mean(axis=1), (phigrad2 * logdens).mean(axis=1)]).transpose()
 
-def alpha_grad(betas):
+def alpha_grad(E_all, gvec, vec, denom, lp, lq):
     '''
     Output m x p
     '''
-    pass
+    p1 = 1/sigsq[:,None,None]*np.einsum('ijk,ilk->ilj', E_all, gvec)
+    p2 = 1/denom[:,None,None]*np.einsum('ijk,ilk->ilj', E_all, vec)
+    return np.mean(p1 + p2*(lp - lq)[:,:,None], axis=1)
 
 def sigsq_grad(betas):
     '''
