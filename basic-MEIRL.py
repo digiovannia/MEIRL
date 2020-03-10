@@ -591,11 +591,13 @@ def alpha_grad(E_all, gvec, vec, denom, lp, lq):
     p2 = 1/denom[:,None,None]*np.einsum('ijk,ilk->ilj', E_all, vec)
     return np.mean(p1 + p2*(lp - lq)[:,:,None], axis=1)
 
-def sigsq_grad(betas):
+def sigsq_grad(Ti, sigsq, gnorm, denom, R_all, vec, lp, lq, vecnorm):
     '''
     Output m x 1
     '''
-    pass
+    p1 = -Ti/(2*sigsq[:,None]) + gnorm/(2*sigsq[:,None]**2)
+    p2 = -Ti/(2*denom[:,None]) + np.einsum('ik,ilk->il', R_all, vec)/denom[:,None] + vecnorm/(2*denom[:,None]**2)
+    return np.mean(p1 + p2*(lp - lq), axis=1)
 
 def theta_grad(betas):
     '''
