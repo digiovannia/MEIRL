@@ -226,12 +226,6 @@ def eta(st):
     return np.array([abs(st[0]-1), abs(st[1]-1), abs(st[0]-4),
                      abs(st[1]-4), INTERCEPT])
 
-def eta_mat(s_arr):
-    #s = [state_space[state] for state in s]
-    #s_arr = np.array(s)
-    return np.array([abs(s_arr[:,0]-1), abs(s_arr[:,1]-1), abs(s_arr[:,0]-4),
-                     abs(s_arr[:,1]-4), INTERCEPT*np.ones(len(s_arr))])
-
 def mu(s, alpha):
     return np.dot(eta(s), alpha)
 
@@ -379,6 +373,17 @@ def vec_expect_reward(rewards, s, a, TP, state_space):
     a is list of actions
     '''
     return TP[s, a].dot(np.ravel(rewards))
+    
+def arr_expect_reward(rewards, data, TP, state_space):
+    '''
+    data is m x 2 x Ti
+    '''
+    return TP[data[:,0], data[:,1]].dot(np.ravel(rewards)) #m x Ti
+
+'''
+R_all = np.array([vec_expect_reward(reward_est, data[i][0],
+                 data[i][1], TP, state_space) for i in range(m)])
+'''
 
 def init_state_sample(state_space):
     '''
@@ -444,20 +449,34 @@ def make_data(Q, alphas, sigsqs, reward_str, N, Ti):
     # second is m
     return trajectories 
 
-def sample_MV_beta(i, phi, alpha, sigsq, theta, s, a, TP, state_space,
-                   B):
+def sample_MV_beta(i, phi, alpha, sigsq, theta, s, a, TP,
+                   state_space, B):
+    '''
+    s is list of indices
+
+    may delete
+    '''
     reward_est = lin_rew_func(theta)
     R = vec_expect_reward(reward_est, s, a, TP, state_space)
-    E = eta_mat(s)
+    E = eta_mat(state_space[s])
     mui = sigsq[i]*R + E.transpose().dot(alpha[i]) + phi[i,0]*np.ones(R.shape[0])
     Covi = (sigsq[i]+phi[i,1])*np.eye(R.shape[0])
     return np.random.multivariate_normal(mui, Covi, B)
 
+def eta_mat(data):
+    #VECTORIZE!
+    arr = np.array([abs(data[:,0,:] // 6 - 1),
+                    abs(data[:,0,:] % 6 - 1),
+                    abs(data[:,0,:] // 6 - 4),
+                    abs(data[:,0,:] % 6 - 4),
+                    INTERCEPT*np.ones(data[:,0,:].shape)])
+
+    return np.swapaxes(arr, 0, 1)
+
 def RE_all(theta, data, TP, state_space, m):
     reward_est = lin_rew_func(theta)
-    R_all = np.array([vec_expect_reward(reward_est, data[i][0],
-                      data[i][1], TP, state_space) for i in range(m)]) # m x Ti
-    E_all = np.array([eta_mat(data[i][0]) for i in range(m)])
+    R_all = arr_expect_reward(reward_est, data, TP, state_space) # m x Ti
+    E_all = eta_mat(data)
     return R_all, E_all
 
 def sample_all_MV_beta(phi, alpha, sigsq, theta, R_all, E_all, data, TP,
@@ -561,7 +580,7 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
     '''
     impa = uniform_action_sample(action_space, M)
     for n in range(N):
-        data = traj_data[n]
+        data = np.array(traj_data[n]) # m x 2 x Ti
         R_all, E_all = RE_all(theta, data, TP, state_space, m)
         betas = sample_all_MV_beta(phi, alpha, sigsq, theta, R_all, E_all,
                                           data, TP, state_space, B, m)
