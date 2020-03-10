@@ -18,7 +18,7 @@ np.random.seed(1)
 
 # Global params
 D=6
-MOVE_NOISE = 0
+MOVE_NOISE = 0.05
 INTERCEPT = 10
 WEIGHT = 2
 N = 10
@@ -82,6 +82,8 @@ def transition(state_space, action_space):
                             (y1 + action[1] >= D)):
                             TP[s,a,state_index((x2,y2))] += 1 - MOVE_NOISE
     return TP
+
+TP = transition(state_space, action_space)
 
 def coord(x):
     return min(max(x, 0), D-1)
@@ -449,6 +451,12 @@ def make_data(Q, alphas, sigsqs, reward_str, N, Ti):
     # second is m
     return trajectories 
 
+traj_data = make_data(Q, ex_alphas, ex_sigsqs, rewards, N, Ti)
+data = np.array(traj_data[0]) # for testing
+# first index is n=1 to N
+# second index is expert
+# third is states, actions
+
 def sample_MV_beta(i, phi, alpha, sigsq, theta, s, a, TP,
                    state_space, B):
     '''
@@ -523,13 +531,15 @@ def logZ(betas, impa, theta, data, M, TP, action_space):
     # grid world with 4 actions very well!
     return logZvec # m x N; Not averaged over beta!
 
-def traj_TP(data, TP):
+def traj_TP(data, TP, Ti, m):
     '''
     data = m x 2 x Ti
+    output = m x (Ti-1)
 
-    Computes TPs for s1, a1 to s2, ..., st-1, at-1 to st
+    Computes TPs for (s1, a1) to s2, ..., st-1, at-1 to st
     '''
-    pass
+    s2_thru_sTi = TP[data[:,0,:(Ti-1)],data[:,1,:(Ti-1)]]
+    return s2_thru_sTi[np.arange(m)[:,None], np.arange(Ti-1), data[:,0,1:]]
 
 def phi_grad(betas, phi, alpha, sigsq, theta, R_all, E_all, Ti,
              logZvec):
@@ -609,12 +619,6 @@ def grad_log_Z(theta, ):
 
 theta = np.array([4, 4, -6, -6, 0.1])
 sns.heatmap(lin_rew_func(theta))
-
-traj_data = make_data(Q, ex_alphas, ex_sigsqs, rewards, N, Ti)
-data = traj_data[0] # for testing
-# first index is n=1 to N
-# second index is expert
-# third is states, actions
 
 '''
 np.random.seed(1)
