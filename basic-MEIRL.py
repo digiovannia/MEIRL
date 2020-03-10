@@ -487,8 +487,11 @@ def sample_all_MV_beta(phi, alpha, sigsq, theta, R_all, E_all, data, TP,
 
     Output is m x B x Ti
     '''
-    mus = np.array([sigsq[i]*R_all[i] + E_all[i].transpose().dot(alpha[i]) + phi[i,0]*np.ones(R_all[i].shape[0]) for i in range(m)])
-    Covs = np.array([(sigsq[i]+phi[i,1])*np.eye(R_all[i].shape[0]) for i in range(m)])
+    mus = sigsq[:,None]*R_all + np.einsum('ijk,ij->ik', E_all, alpha) + phi[:,0][:,None]*np.ones(R_all.shape[:2])
+    Covs = np.einsum('i,jk->ijk', sigsq+phi[:,1], np.eye(R_all.shape[1]))
+
+    #mus = np.array([sigsq[i]*R_all[i] + E_all[i].transpose().dot(alpha[i]) + phi[i,0]*np.ones(R_all[i].shape[0]) for i in range(m)])
+    #Covs = np.array([(sigsq[i]+phi[i,1])*np.eye(R_all[i].shape[0]) for i in range(m)])
     return np.array([np.random.multivariate_normal(mus[i], Covs[i], B) for i in range(m)])
 
 '''
