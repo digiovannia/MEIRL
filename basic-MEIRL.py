@@ -45,6 +45,9 @@ def act_to_coord(a):
 def state_index(tup):
     return D*tup[0] + tup[1]
 
+def multi_state_index(states):
+    return D*states[:,0]+states[:,1]
+
 def state_tuples_to_num(state_space, s):
     '''
     will need to fix
@@ -126,7 +129,7 @@ def episode(s,T,policy,rewards,step_func,a=-1):
         a = np.random.choice(action_space, p=policy[tuple(s)])
         actions.append(a)
     reward_list.append(rewards[tuple(s)])
-    return states, actions, reward_list
+    return np.array(states), actions, reward_list
 
 def stoch_policy(det_policy, action_space):
     '''
@@ -141,6 +144,7 @@ def stoch_policy(det_policy, action_space):
     out[x,y,z] = 1
     return out
 
+# may delete this...
 def MCES(gam, tol, T, state_space, action_space, rewards,
          policy, Q):
     '''
@@ -154,7 +158,7 @@ def MCES(gam, tol, T, state_space, action_space, rewards,
         # Random start
         # Given state space represented as a list
         s = state_space[np.random.choice(len(state_space))]
-        a = action_space[np.random.choice(len(action_space))]
+        a = np.random.choice(action_space)
         states, actions, reward_list = episode(s,T,policy,
           rewards,grid_step,a=a)
         G = 0
@@ -205,9 +209,9 @@ def Qlearn(rate, gam, eps, K, T, state_space, action_space,
         st = state_space[np.random.choice(len(state_space))]
         for _ in range(T):
             policy = eps_greedy(Q, eps, action_space)
-            at = np.random.choice(action_space, p=policy[st])    
+            at = np.random.choice(action_space, p=policy[tuple(st)])    
             sp = grid_step(st,at)
-            rt = rewards[sp]
+            rt = rewards[tuple(sp)]
             qnext = np.max(Q[sp[0],sp[1]])
             qnow = Q[st[0],st[1],at]
             Q[st[0],st[1],at] += rate*(rt + gam*qnext - qnow)
@@ -222,14 +226,11 @@ def eta(st):
     return np.array([abs(st[0]-1), abs(st[1]-1), abs(st[0]-4),
                      abs(st[1]-4), INTERCEPT])
 
-def eta_mat(s):
-    '''
-    FIX THIS
-    '''
-    s = [state_space[state] for state in s]
-    s_arr = np.array(s)
+def eta_mat(s_arr):
+    #s = [state_space[state] for state in s]
+    #s_arr = np.array(s)
     return np.array([abs(s_arr[:,0]-1), abs(s_arr[:,1]-1), abs(s_arr[:,0]-4),
-                     abs(s_arr[:,1]-4), INTERCEPT*np.ones(len(s))])
+                     abs(s_arr[:,1]-4), INTERCEPT*np.ones(len(s_arr))])
 
 def mu(s, alpha):
     return np.dot(eta(s), alpha)
@@ -306,8 +307,6 @@ ex_sigsqs = np.array([sigsq1, sigsq2, sigsq3, sigsq4])
 # well in bottom right corner but not
 # elsewhere.
 
-#policy, Q = MCES(0.8, 0.0001, 50, state_space, action_space,
-#                 rewards, init_policy, init_Q)
 np.random.seed(1)
 init_det_policy = np.random.choice([0,1,2,3], size=(D,D))
 init_policy = stoch_policy(init_det_policy, action_space)
@@ -339,31 +338,111 @@ alpha = np.random.normal(size=(m,p))
 sigsq = np.random.rand(m)
 theta = np.random.normal(size=d)
 
+def radial(s, c):
+    return np.exp(-5*((s[0]-c[0])**2+(s[1]-c[1])**2))
+
+def linear_reward(theta, st):
+    varphi = np.array([radial(st, (0,0)),
+                    radial(st,(D-1,D-1)),
+                    radial(st, (0,D-1)),
+                    radial(st, (D-1,0)),
+                     INTERCEPT])
+    return np.dot(varphi, theta)
+
+def vec_linear_reward(theta, s):
+    pass
+
+def lin_rew_func(theta):
+    '''
+    Using radial features above and theta below,
+    gives a very close approximation to the true
+    RF.
+
+    May want to vectorize?
+    '''
+    rvals = np.zeros((D,D))
+    for i in range(D):
+        for j in range(D):
+            rvals[i,j] = linear_reward(theta, (i,j))
+    return rvals
+
 def expect_reward(rewards, st, at, TP, state_space):
+    '''
+    fix?
+    '''
     si = state_space.index(st)
     return TP[si, at].dot(np.ravel(rewards))
 
 def vec_expect_reward(rewards, s, a, TP, state_space):
     '''
-    s is a list of states
+    s is a list of state indices
     a is list of actions
-
-    May want to make this more vectorized...
     '''
-    #si = [state_space.index(st) for st in s]
     return TP[s, a].dot(np.ravel(rewards))
 
-def sample_beta(i, phi, alpha, sigsq, theta, st, at, TP, state_space):
+def init_state_sample(state_space):
     '''
-    Given parameters for the recognition model,
-    produces beta samples.
+    Returns initial state; uniform
+    '''
+    s = state_space[np.random.choice(len(state_space))]
+    return s
 
-    Should make this work for whole stretch of time.
+def Q_est(theta_h, gam, T, state_space,
+          action_space, init_policy, init_Q, Qlearn=False,
+          tol=0.0001, rate=0.5, eps=0.05, K=10000):
     '''
-    reward_est = lin_rew_func(theta)
-    R = expect_reward(reward_est, st, at, TP, state_space)
-    mut = mu(st, alpha[i])
-    return np.random.normal(sigsq[i]*R + mut + phi[i,0], sigsq[i] + phi[i,1])
+    Based on an estimate of theta, estimates Q by doing MCES or
+    Q-learning with respect to reward induced by theta.
+    '''
+    reward_str = lin_rew_func(theta_h)
+    if Qlearn:
+        Q_h = Qlearn(rate, gam, eps, K, T, state_space,
+          action_space, reward_str, init_policy, init_Q)[1]
+    else:
+        Q_h = MCES(gam, tol, T, state_space, action_space,
+                   reward_str, init_policy, init_Q)[1]
+    return rewards, Q_h
+
+def synthetic_traj(rewards, policy, Ti, state_space, action_space, init_state_sample):
+    '''
+    Generate a fake trajectory based on given
+    policy. Need to separately generate
+    variational distribution parameters if want to
+    use those.
+    '''
+    s = init_state_sample(state_space)
+    a = np.random.choice(action_space, p=policy[tuple(s)])
+    states, actions, reward_list = episode(s,Ti,policy,rewards,
+                              grid_step,a=a)
+    states = list(multi_state_index(states))
+    return states, actions, reward_list
+
+def see_trajectory(reward_map, state_seq):
+    '''
+    Input state seq is in index form; can transform to tuples
+    '''
+    state_seq = [state_space[s] for s in state_seq]
+    for s in state_seq:
+        sns.heatmap(reward_map)
+        plt.annotate('*', (s[1]+0.2,s[0]+0.7), color='b', size=24)
+        plt.show()
+
+def make_data(Q, alphas, sigsqs, reward_str, N, Ti):
+    '''
+    Creates N trajectories each for local experts, given Q,
+    alphas, sigsqs, rewards (which may be "true" or
+    based on current guesses!)
+    '''
+    policies = [locally_opt(Q, alphas[i],
+                            sigsqs[i])[0] for i in range(m)]
+    trajectories = [
+        [synthetic_traj(reward_str, policies[i], Ti, state_space,
+                        action_space, init_state_sample)[:2] for i in range(m)]
+        for _ in range(N)
+    ]
+    # first index is N
+    # second is m
+    return trajectories 
 
 def sample_MV_beta(i, phi, alpha, sigsq, theta, s, a, TP, state_space,
                    B):
@@ -489,20 +568,6 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
         logZvec = logZ(betas, impa, theta, data, M, TP, action_space)
     pass
 
-def radial(s, c):
-    return np.exp(-5*((s[0]-c[0])**2+(s[1]-c[1])**2))
-
-def linear_reward(theta, st):
-    varphi = np.array([radial(st, (0,0)),
-                    radial(st,(D-1,D-1)),
-                    radial(st, (0,D-1)),
-                    radial(st, (D-1,0)),
-                     INTERCEPT])
-    return np.dot(varphi, theta)
-
-def vec_linear_reward(theta, s):
-    pass
-
 def grad_lin_rew(st):
     pass 
 
@@ -520,82 +585,8 @@ def grad_log_Z(theta, ):
     Ti = len(...)
     return (Num/den).dot(np.ones(Ti))
 
-def lin_rew_func(theta):
-    '''
-    Using radial features above and theta below,
-    gives a very close approximation to the true
-    RF.
-    '''
-    rvals = np.zeros((D,D))
-    for i in range(D):
-        for j in range(D):
-            rvals[i,j] = linear_reward(theta, (i,j))
-    return rvals
-
 theta = np.array([4, 4, -6, -6, 0.1])
 sns.heatmap(lin_rew_func(theta))
-
-def init_state_sample(state_space):
-    '''
-    Returns initial state; uniform
-    '''
-    s = state_space[np.random.choice(len(state_space))]
-    return s
-
-def Q_est(theta_h, gam, T, state_space,
-          action_space, init_policy, init_Q, Qlearn=False,
-          tol=0.0001, rate=0.5, eps=0.05, K=10000):
-    '''
-    Based on an estimate of theta, estimates Q by doing MCES or
-    Q-learning with respect to reward induced by theta.
-    '''
-    reward_str = lin_rew_func(theta_h)
-    if Qlearn:
-        Q_h = Qlearn(rate, gam, eps, K, T, state_space,
-          action_space, reward_str, init_policy, init_Q)[1]
-    else:
-        Q_h = MCES(gam, tol, T, state_space, action_space,
-                   reward_str, init_policy, init_Q)[1]
-    return rewards, Q_h
-
-def synthetic_traj(rewards, policy, Ti, state_space, action_space, init_state_sample):
-    '''
-    Generate a fake trajectory based on given
-    policy. Need to separately generate
-    variational distribution parameters if want to
-    use those.
-    '''
-    s = init_state_sample(state_space)
-    a = np.random.choice(action_space, p=policy[s])
-    states, actions, reward_list = episode(s,Ti,policy,rewards,
-                              grid_step,a=a)
-    states = state_tuples_to_num(state_space, states)
-    return states, actions, reward_list
-
-def see_trajectory(reward_map, state_seq):
-    '''
-    Input state seq is in index form; can transform to tuples
-    '''
-    state_seq = [state_space[s] for s in state_seq]
-    for s in state_seq:
-        sns.heatmap(reward_map)
-        plt.annotate('*', (s[1]+0.2,s[0]+0.7), color='b', size=24)
-        plt.show()
-
-def make_data(Q, alphas, sigsqs, reward_str, N, Ti):
-    '''
-    Creates N trajectories each for local experts, given Q,
-    alphas, sigsqs, rewards (which may be "true" or
-    based on current guesses!)
-    '''
-    policies = [locally_opt(Q, alphas[i],
-                            sigsqs[i])[0] for i in range(m)]
-    trajectories = [
-        [synthetic_traj(reward_str, policies[i], Ti, state_space,
-                        action_space, init_state_sample)[:2] for i in range(m)]
-        for _ in range(N)
-    ]
-    return trajectories
 
 traj_data = make_data(Q, ex_alphas, ex_sigsqs, rewards, N, Ti)
 data = traj_data[0] # for testing
