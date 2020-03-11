@@ -21,9 +21,10 @@ D=6
 MOVE_NOISE = 0.05
 INTERCEPT = 10
 WEIGHT = 2
-N = 10
-Ti = 50
-B = 20
+M = 20 # number of actions used for importance sampling
+N = 10 # number of trajectories per expert
+Ti = 50 # length of trajectory
+B = 20 # number of betas sampled for expectation
 
 # Making gridworld
 state_space = np.array([(i,j) for i in range(D) for j in range(D)])
@@ -585,7 +586,7 @@ impa = uniform_action_sample(action_space, M)
 R_all, E_all = RE_all(theta, data, TP, state_space, m)
 betas = sample_all_MV_beta(phi, alpha, sigsq, theta, R_all, E_all,
                            data, TP, state_space, B, m)
-logZvec = logZ(betas, impa, theta, data, M, TP, action_space)
+logZvec, glogZ = logZ(betas, impa, theta, data, M, TP, action_space)
 
 def grad_terms(betas, phi, alpha, sigsq, theta, data, R_all,
              E_all, Ti, logZvec, m):
@@ -599,7 +600,7 @@ def grad_terms(betas, phi, alpha, sigsq, theta, data, R_all,
     vecnorm = np.einsum('ijk,ijk->ij', vec, vec)  
     gvec = betas - aE[:,None,:]
     gnorm = np.einsum('ijk,ijk->ij', gvec, gvec)
-    return one, aE, vec, denom, vecnorm, gvec, gnorm
+    return one, vec, denom, vecnorm, gvec, gnorm
 
 def logp(state_space, Ti, sigsq, gnorm, data, TP, m, betas, R_all, logZvec):
     p1 = np.log(rho(state_space)) - Ti/2*np.log(2*np.pi*sigsq)[:,None] - 1/(2*sigsq)[:,None]*gnorm
@@ -647,10 +648,10 @@ def theta_grad(data, state_space, denom, vec, glogZ, lp, lq):
     gradR = grad_lin_rew(data, state_space) # m x d x Ti 
     p1 = -glogZ + np.einsum('ijk,imk->imj', gradR, betas)
     p2 = np.swapaxes((sigsq/denom)[:,None,None] * np.einsum('ijk,ilk->ijl', gradR, vec), 1, 2)
-    return np.mean(p1 + p2*(lp - lq)[:,:,None], axis=1)
+    return np.sum(np.mean(p1 + p2*(lp - lq)[:,:,None], axis=1), axis=0)
 
 def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M):
+         action_space, B, m, M, N, Ti):
     '''
     Need the expert trajectories
 
@@ -658,12 +659,23 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
     2) 
     '''
     impa = uniform_action_sample(action_space, M)
+    # while error > eps:
     for n in range(N):
         data = np.array(traj_data[n]) # m x 2 x Ti
         R_all, E_all = RE_all(theta, data, TP, state_space, m)
         betas = sample_all_MV_beta(phi, alpha, sigsq, theta, R_all, E_all,
-                                          data, TP, state_space, B, m)
+          data, TP, state_space, B, m)
         logZvec, glogZ = logZ(betas, impa, theta, data, M, TP, action_space)
+        one, vec, denom, vecnorm, gvec, gnorm = grad_terms(betas, phi,
+          alpha, sigsq, theta, data, R_all, E_all, Ti, logZvec, m)
+        lp = logp(state_space, Ti, sigsq, gnorm, data, TP, m, betas, R_all,
+          logZvec)
+        lq = logq(Ti, denom, vecnorm)
+        g_phi = phi_grad(vec, one, denom, vecnorm, lp, lq)
+        g_theta = theta_grad(data, state_space, denom, vec, glogZ, lp, lq)
+        g_alpha = alpha_grad(E_all, gvec, vec, denom, lp, lq)
+        g_sigsq = sigsq_grad(Ti, sigsq, gnorm, denom, R_all, vec, lp, lq,
+          vecnorm)
     pass
 
 theta = np.array([4, 4, -6, -6, 0.1])
