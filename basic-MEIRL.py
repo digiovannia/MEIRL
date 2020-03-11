@@ -550,14 +550,20 @@ def logZ(betas, impa, theta, data, M, TP, action_space):
     R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
                       imp_samp_data(data, impa, j, m, Ti).astype(int),
                       TP, state_space) for j in range(M)]), 0, 1)
-    '''
-    R_all = np.array([vec_expect_reward(reward_est, data[i][0],
-                      data[i][1], TP, state_space) for i in range(m)])
-    '''
+    lst = []
+    for j in range(M):
+        newdata = imp_samp_data(data, impa, j, m, Ti).astype(int)
+        feat_expect = grad_lin_rew(newdata, state_space)
+        #probs = TP[newdata[:,0], newdata[:,1]] 
+        lst.append(feat_expect)
+    gradR_Z = np.swapaxes(np.array(lst), 0, 1)
+    
     expo = np.exp(np.einsum('ijk,ilk->ijlk', betas, R_Z))
     volA = len(action_space) # m x N x Ti
     lvec = np.log(volA*np.mean(expo,axis=2)) # for all times
     logZvec = lvec.sum(axis=2)
+
+    num = np.einsum('ijk,ilmk->ijlmk', betas, gradR_Z)
     # This appears to approximate the true logZ for the
     # grid world with 4 actions very well!
     '''
