@@ -563,15 +563,12 @@ def logZ(betas, impa, theta, data, M, TP, action_space):
     lvec = np.log(volA*np.mean(expo,axis=2)) # for all times
     logZvec = lvec.sum(axis=2)
 
-    num = np.einsum('ijk,ilmk->ijlmk', betas, gradR_Z)
+    num = expo[:,:,:,None,:]*np.einsum('ijk,ilmk->ijlmk', betas, gradR_Z)
+    numsum = num.sum(axis=2)
+    den = expo.sum(axis=2)
+    glogZ = (numsum/den[:,:,None,:]).sum(axis=3)
     # This appears to approximate the true logZ for the
     # grid world with 4 actions very well!
-    '''
-    gradlinrew
-
-    probs = TP[data[:,0], data[:,1]] # m x Ti x D**2
-    return np.swapaxes(probs.dot(psi_all_states(state_space).transpose()), 1, 2)
-    '''
     return logZvec, glogZ # m x N; Not averaged over beta!
 
 def traj_TP(data, TP, Ti, m):
@@ -643,13 +640,13 @@ def sigsq_grad(Ti, sigsq, gnorm, denom, R_all, vec, lp, lq, vecnorm):
     p2 = -Ti/(2*denom[:,None]) + np.einsum('ik,ilk->il', R_all, vec)/denom[:,None] + vecnorm/(2*denom[:,None]**2)
     return np.mean(p1 + p2*(lp - lq), axis=1)
 
-def theta_grad(data, state_space, denom, vec, logZvec):
+def theta_grad(data, state_space, denom, vec, glogZ, lp, lq):
     '''
     Output m x d
     '''
     gradR = grad_lin_rew(data, state_space) # m x d x Ti 
-    p1 = ...
-    p2 = (sigsq/denom)[:,None,None] * np.einsum('ijk,ilk->ijl', gradR, vec)
+    p1 = -glogZ + np.einsum('ijk,imk->imj', gradR, betas)
+    p2 = np.swapaxes((sigsq/denom)[:,None,None] * np.einsum('ijk,ilk->ijl', gradR, vec), 1, 2)
     return np.mean(p1 + p2*(lp - lq)[:,:,None], axis=1)
 
 def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
@@ -668,20 +665,6 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
                                           data, TP, state_space, B, m)
         logZvec, glogZ = logZ(betas, impa, theta, data, M, TP, action_space)
     pass
-
-def grad_log_Z(theta, ):
-    '''
-    Uses a vectorized form to compute gradient of 
-    log Z when tractable, e.g. in this case where we 
-    can sum over actions.
-    '''
-    # Compute Num by summing matrices over actions,
-    # where each col of the matrix corresponds to a time
-    # step
-    Num = np.array(d, len()) 
-    den = ... 
-    Ti = len(...)
-    return (Num/den).dot(np.ones(Ti))
 
 theta = np.array([4, 4, -6, -6, 0.1])
 sns.heatmap(lin_rew_func(theta, state_space))
