@@ -338,18 +338,29 @@ theta = np.random.normal(size=d)
 def radial(s, c):
     return np.exp(-5*((s[0]-c[0])**2+(s[1]-c[1])**2))
 
+def arr_radial(s, c):
+    return np.exp(-5*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
+
 def linear_reward(theta, st):
-    varphi = np.array([radial(st, (0,0)),
+    psi = np.array([radial(st, (0,0)),
                     radial(st,(D-1,D-1)),
                     radial(st, (0,D-1)),
                     radial(st, (D-1,0)),
                      INTERCEPT])
-    return np.dot(varphi, theta)
+    return np.dot(psi, theta)
+
+def psi_all_states(state_space):
+    # d x D**2
+    return np.array([arr_radial(state_space, (0,0)),
+                    arr_radial(state_space,(D-1,D-1)),
+                    arr_radial(state_space, (0,D-1)),
+                    arr_radial(state_space, (D-1,0)),
+                     INTERCEPT*np.ones(len(state_space))])
 
 def vec_linear_reward(theta, s):
     pass
 
-def lin_rew_func(theta):
+def lin_rew_func(theta, state_space):
     '''
     Using radial features above and theta below,
     gives a very close approximation to the true
@@ -357,11 +368,7 @@ def lin_rew_func(theta):
 
     May want to vectorize?
     '''
-    rvals = np.zeros((D,D))
-    for i in range(D):
-        for j in range(D):
-            rvals[i,j] = linear_reward(theta, (i,j))
-    return rvals
+    return np.reshape(theta.dot(psi_all_states(state_space)), (D, D))
 
 def expect_reward(rewards, st, at, TP, state_space):
     '''
@@ -383,10 +390,19 @@ def arr_expect_reward(rewards, data, TP, state_space):
     '''
     return TP[data[:,0], data[:,1]].dot(np.ravel(rewards)) #m x Ti
 
-'''
-R_all = np.array([vec_expect_reward(reward_est, data[i][0],
-                 data[i][1], TP, state_space) for i in range(m)])
-'''
+def grad_lin_rew(data, state_space):
+    '''
+    Input (data) is m x 2 x Ti
+
+    Output should be m x d x Ti
+
+    Each column is E(s'|st,at)(psi(s')) where psi is
+    feature
+
+    Looks correct!
+    '''
+    probs = TP[data[:,0], data[:,1]] # m x Ti x D**2
+    return np.swapaxes(probs.dot(psi_all_states(state_space).transpose()), 1, 2)
 
 def init_state_sample(state_space):
     '''
@@ -402,7 +418,7 @@ def Q_est(theta_h, gam, T, state_space,
     Based on an estimate of theta, estimates Q by doing MCES or
     Q-learning with respect to reward induced by theta.
     '''
-    reward_str = lin_rew_func(theta_h)
+    reward_str = lin_rew_func(theta_h, state_space)
     if Qlearn:
         Q_h = Qlearn(rate, gam, eps, K, T, state_space,
           action_space, reward_str, init_policy, init_Q)[1]
@@ -465,7 +481,7 @@ def sample_MV_beta(i, phi, alpha, sigsq, theta, s, a, TP,
 
     may delete
     '''
-    reward_est = lin_rew_func(theta)
+    reward_est = lin_rew_func(theta, state_space)
     R = vec_expect_reward(reward_est, s, a, TP, state_space)
     E = eta_mat(state_space[s])
     mui = sigsq[i]*R + E.transpose().dot(alpha[i]) + phi[i,0]*np.ones(R.shape[0])
@@ -483,7 +499,7 @@ def eta_mat(data):
     return np.swapaxes(arr, 0, 1)
 
 def RE_all(theta, data, TP, state_space, m):
-    reward_est = lin_rew_func(theta)
+    reward_est = lin_rew_func(theta, state_space)
     R_all = arr_expect_reward(reward_est, data, TP, state_space) # m x Ti
     E_all = eta_mat(data)
     return R_all, E_all
@@ -520,7 +536,7 @@ def logZ(betas, impa, theta, data, M, TP, action_space):
 
     May want to vectorize vec_expect_reward better to avoid 2 for-loops here
     '''
-    reward_est = lin_rew_func(theta)
+    reward_est = lin_rew_func(theta, state_space)
     R_all = np.array([[vec_expect_reward(reward_est, data[i][0],
                       [impa[j]]*Ti, TP, state_space) for j in range(M)]
                       for i in range(m)])
@@ -594,6 +610,8 @@ def alpha_grad(E_all, gvec, vec, denom, lp, lq):
 def sigsq_grad(Ti, sigsq, gnorm, denom, R_all, vec, lp, lq, vecnorm):
     '''
     Output m x 1
+
+    Feasible!
     '''
     p1 = -Ti/(2*sigsq[:,None]) + gnorm/(2*sigsq[:,None]**2)
     p2 = -Ti/(2*denom[:,None]) + np.einsum('ik,ilk->il', R_all, vec)/denom[:,None] + vecnorm/(2*denom[:,None]**2)
@@ -622,9 +640,6 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
         logZvec = logZ(betas, impa, theta, data, M, TP, action_space)
     pass
 
-def grad_lin_rew(st):
-    pass 
-
 def grad_log_Z(theta, ):
     '''
     Uses a vectorized form to compute gradient of 
@@ -640,20 +655,7 @@ def grad_log_Z(theta, ):
     return (Num/den).dot(np.ones(Ti))
 
 theta = np.array([4, 4, -6, -6, 0.1])
-sns.heatmap(lin_rew_func(theta))
-
-'''
-np.random.seed(1)
-psi_t1 = np.random.normal(size=d)
-pt2 = np.random.normal(size=(d,d))
-psi_t2 = pt2.dot(pt2.transpose())
-psi_a1 = np.random.normal(size=(m,p))
-pa2 = [np.random.normal(size=(p,p)) for i in range(m)]
-psi_a2 = np.stack([pa2[i].dot(pa2[i].transpose()) for i in range(m)])
-psi_s = np.random.rand(m)
-prior = (psi_t1, psi_t2, psi_a1, psi_a2, psi_s)
-thetas, alphas, sigsqs = variational(prior)
-'''
+sns.heatmap(lin_rew_func(theta, state_space))
 
 # Testing
 theta_h = np.random.rand(5)
