@@ -530,23 +530,43 @@ def rho(state_space):
 def uniform_action_sample(action_space, M):
     return list(np.random.choice(action_space, M))
 
+def imp_samp_data(data, impa, j, m, Ti):
+    actions = impa[j]*np.ones((m,Ti))
+    out = np.stack((data[:,0,:], actions))
+    return np.swapaxes(out, 0, 1)
+
 def logZ(betas, impa, theta, data, M, TP, action_space):
     '''
-    Importance sampling approximation
+    Importance sampling approximation of logZ
+    and grad logZ
 
     May want to vectorize vec_expect_reward better to avoid 2 for-loops here
     '''
     reward_est = lin_rew_func(theta, state_space)
-    R_all = np.array([[vec_expect_reward(reward_est, data[i][0],
-                      [impa[j]]*Ti, TP, state_space) for j in range(M)]
-                      for i in range(m)])
-    expo = np.exp(np.einsum('ijk,ilk->ijlk', betas, R_all))
+
+    #R_all = np.array([[vec_expect_reward(reward_est, data[i][0],
+    #                  [impa[j]]*Ti, TP, state_space) for j in range(M)]
+    #                  for i in range(m)])
+    R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
+                      imp_samp_data(data, impa, j, m, Ti).astype(int),
+                      TP, state_space) for j in range(M)]), 0, 1)
+    '''
+    R_all = np.array([vec_expect_reward(reward_est, data[i][0],
+                      data[i][1], TP, state_space) for i in range(m)])
+    '''
+    expo = np.exp(np.einsum('ijk,ilk->ijlk', betas, R_Z))
     volA = len(action_space) # m x N x Ti
     lvec = np.log(volA*np.mean(expo,axis=2)) # for all times
     logZvec = lvec.sum(axis=2)
     # This appears to approximate the true logZ for the
     # grid world with 4 actions very well!
-    return logZvec # m x N; Not averaged over beta!
+    '''
+    gradlinrew
+
+    probs = TP[data[:,0], data[:,1]] # m x Ti x D**2
+    return np.swapaxes(probs.dot(psi_all_states(state_space).transpose()), 1, 2)
+    '''
+    return logZvec, glogZ # m x N; Not averaged over beta!
 
 def traj_TP(data, TP, Ti, m):
     '''
@@ -617,11 +637,14 @@ def sigsq_grad(Ti, sigsq, gnorm, denom, R_all, vec, lp, lq, vecnorm):
     p2 = -Ti/(2*denom[:,None]) + np.einsum('ik,ilk->il', R_all, vec)/denom[:,None] + vecnorm/(2*denom[:,None]**2)
     return np.mean(p1 + p2*(lp - lq), axis=1)
 
-def theta_grad(betas):
+def theta_grad(data, state_space, denom, vec, logZvec):
     '''
     Output m x d
     '''
-    pass
+    gradR = grad_lin_rew(data, state_space) # m x d x Ti 
+    p1 = ...
+    p2 = (sigsq/denom)[:,None,None] * np.einsum('ijk,ilk->ijl', gradR, vec)
+    return np.mean(p1 + p2*(lp - lq)[:,:,None], axis=1)
 
 def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M):
@@ -637,7 +660,7 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
         R_all, E_all = RE_all(theta, data, TP, state_space, m)
         betas = sample_all_MV_beta(phi, alpha, sigsq, theta, R_all, E_all,
                                           data, TP, state_space, B, m)
-        logZvec = logZ(betas, impa, theta, data, M, TP, action_space)
+        logZvec, glogZ = logZ(betas, impa, theta, data, M, TP, action_space)
     pass
 
 def grad_log_Z(theta, ):
