@@ -641,7 +641,7 @@ def sigsq_grad(Ti, sigsq, gnorm, denom, R_all, vec, lp, lq, vecnorm):
     p2 = -Ti/(2*denom[:,None]) + np.einsum('ik,ilk->il', R_all, vec)/denom[:,None] + vecnorm/(2*denom[:,None]**2)
     return np.mean(p1 + p2*(lp - lq), axis=1)
 
-def theta_grad(data, state_space, denom, vec, glogZ, lp, lq):
+def theta_grad(data, betas, sigsq, state_space, denom, vec, glogZ, lp, lq):
     '''
     Output m x d
     '''
@@ -649,6 +649,53 @@ def theta_grad(data, state_space, denom, vec, glogZ, lp, lq):
     p1 = -glogZ + np.einsum('ijk,imk->imj', gradR, betas)
     p2 = np.swapaxes((sigsq/denom)[:,None,None] * np.einsum('ijk,ilk->ijl', gradR, vec), 1, 2)
     return np.sum(np.mean(p1 + p2*(lp - lq)[:,:,None], axis=1), axis=0)
+
+def grad_check(phi, alpha, sigsq, theta, data, Ti, m, state_space, B,
+               impa, ix):
+    '''
+    Theta grad computation pretty good for ix = 2, but terrible for
+    ix = 1 and 3. Seems biased for 3? Giving -85ish when should be -217
+
+    Only really unbiased for ix = 2...
+
+    HUGE upward bias for 4, on order of 6000 when should be ~1
+
+    Very high variance.
+    '''
+    epsilon = 1e-4
+
+    R_all, E_all = RE_all(theta, data, TP, state_space, m)
+    betas = sample_all_MV_beta(phi, alpha, sigsq, theta, R_all, E_all,
+                           data, TP, state_space, B, m)
+    logZvec, glogZ = logZ(betas, impa, theta, data, M, TP, action_space)
+    one, vec, denom, vecnorm, gvec, gnorm = grad_terms(betas, phi,
+      alpha, sigsq, theta, data, R_all, E_all, Ti, logZvec, m)
+    lp = logp(state_space, Ti, sigsq, gnorm, data, TP, m, betas, R_all,
+      logZvec)
+    lq = logq(Ti, denom, vecnorm)
+    a_t_g = theta_grad(data, betas, sigsq, state_space, denom, vec, glogZ, lp, lq)
+
+    left = theta.copy()
+    left[ix] += epsilon
+    right = theta.copy()
+    right[ix] -= epsilon
+    R_all_l, E_all_l = RE_all(left, data, TP, state_space, m)
+    R_all_r, E_all_r = RE_all(right, data, TP, state_space, m)
+    logZvec_l, glogZ_l = logZ(betas, impa, left, data, M, TP, action_space)
+    one_l, vec_l, denom_l, vecnorm_l, gvec_l, gnorm_l = grad_terms(betas,
+      phi, alpha, sigsq, left, data, R_all_l, E_all_l, Ti, logZvec_l, m)
+    logZvec_r, glogZ_r = logZ(betas, impa, right, data, M, TP, action_space)
+    one_r, vec_r, denom_r, vecnorm_r, gvec_r, gnorm_r = grad_terms(betas,
+      phi, alpha, sigsq, right, data, R_all_r, E_all_r, Ti, logZvec_r, m)
+    lp_l = logp(state_space, Ti, sigsq, gnorm_l, data, TP, m, betas, R_all_l,
+      logZvec_l)
+    lp_r = logp(state_space, Ti, sigsq, gnorm_r, data, TP, m, betas, R_all_r,
+      logZvec_r)
+    lq_l = logq(Ti, denom_l, vecnorm_l)
+    lq_r = logq(Ti, denom_r, vecnorm_r)
+    n_t_g = (lp_l - lq_l - lp_r + lq_r)/(2*epsilon)
+    change = (n_t_g.mean(axis=1)).sum()
+    return a_t_g[ix], change
 
 def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, N, Ti):
