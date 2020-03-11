@@ -50,12 +50,6 @@ def state_index(tup):
 def multi_state_index(states):
     return D*states[:,0]+states[:,1]
 
-def state_tuples_to_num(state_space, s):
-    '''
-    will need to fix
-    '''
-    return [state_space.index(state) for state in s]
-
 def transition(state_space, action_space):
     # 0 index = start state
     # 1 = action
@@ -87,9 +81,6 @@ def transition(state_space, action_space):
 
 TP = transition(state_space, action_space)
 
-def coord(x):
-    return min(max(x, 0), D-1)
-
 def grid_step(s, a):
     '''
     Given current state s and action a, returns resulting
@@ -98,16 +89,6 @@ def grid_step(s, a):
     flip = np.random.rand()
     if flip < MOVE_NOISE:
         a = np.random.choice([0,1,2,3])
-    '''
-    if a == 0:
-        new_state = (coord(s[0]-1), s[1])
-    if a == 1:
-        new_state = (s[0], coord(s[1]+1))
-    if a == 2:
-        new_state = (coord(s[0]+1), s[1])
-    if a == 3:
-        new_state = (s[0], coord(s[1]-1))
-    '''
     new_state = s + act_to_coord(a)
     return np.minimum(np.maximum(new_state, 0), D-1)
 
@@ -147,42 +128,6 @@ def stoch_policy(det_policy, action_space):
     out = np.zeros((D,D,len(action_space)))
     out[x,y,z] = 1
     return out
-
-# may delete this...
-def MCES(gam, tol, T, state_space, action_space, rewards,
-         policy, Q):
-    '''
-    Every-visit Monte Carlo w/ exploring starts to estimate Q*.
-    Returns the corresponding optimal policy and Q*.
-    '''
-    counts = np.zeros((D,D,4))
-    change = np.Inf
-    while change > tol:
-        change = 0
-        # Random start
-        # Given state space represented as a list
-        s = state_space[np.random.choice(len(state_space))]
-        a = np.random.choice(action_space)
-        states, actions, reward_list = episode(s,T,policy,
-          rewards,grid_step,a=a)
-        G = 0
-        for t in range(T-1,-1,-1):
-            G = gam*G + reward_list[t+1]
-            st = states[t]
-            at = actions[t]
-            old_Q = Q[st[0],st[1],at]
-            Q[st[0],st[1],at] *= counts[st[0],st[1],at]
-            counts[st[0],st[1],at] += 1
-            Q[st[0],st[1],at] += G
-            Q[st[0],st[1],at] /= counts[st[0],st[1],at]
-            change = max(change, abs(Q[st[0],st[1],at] - old_Q))
-            policy[st[0],st[1]] *= 0
-            policy[st[0],st[1], np.argmax(Q[st[0],st[1]])] = 1
-    policy *= 0
-    for i in range(D):
-        for j in range(D):
-            policy[i,j,np.argmax(Q[i,j])] = 1
-    return policy, Q
 
 def visualize_policy(rewards, policy):
     '''
@@ -275,7 +220,6 @@ def locally_opt(Q_star, alpha, sigsq):
     det_pol = np.argmax(policy, axis=2)
     return policy, det_pol
 
-
 '''
 Going to test on trajectories from Q* model rather than one-step,
 will see how bad...
@@ -301,10 +245,6 @@ sigsq4 = 25
 ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4])
 ex_sigsqs = np.array([sigsq1, sigsq2, sigsq3, sigsq4])
 
-# Example of policy for expert who does
-# well in bottom right corner but not
-# elsewhere.
-
 np.random.seed(1)
 init_det_policy = np.random.choice([0,1,2,3], size=(D,D))
 init_policy = stoch_policy(init_det_policy, action_space)
@@ -314,8 +254,6 @@ policy, Q = Qlearn(0.5, 0.8, 0.1, 10000, 20, state_space,
           # This seems to converge robustly to optimal policy,
           # although Q values have some variance in states where
           # it doesn't really matter
-#policy, Q = doubleQ(0.5, 0.8, 0.05, 5000, 20, state_space,
-#          action_space, rewards, init_policy, init_Q)
 visualize_policy(rewards, policy)
 pol1 = locally_opt(Q, alpha1, sigsq1)[0]
 pol2 = locally_opt(Q, alpha2, sigsq2)[0]
@@ -336,19 +274,8 @@ alpha = np.random.normal(size=(m,p))
 sigsq = np.random.rand(m)
 theta = np.random.normal(size=d)
 
-def radial(s, c):
-    return np.exp(-5*((s[0]-c[0])**2+(s[1]-c[1])**2))
-
 def arr_radial(s, c):
     return np.exp(-5*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
-
-def linear_reward(theta, st):
-    psi = np.array([radial(st, (0,0)),
-                    radial(st,(D-1,D-1)),
-                    radial(st, (0,D-1)),
-                    radial(st, (D-1,0)),
-                     INTERCEPT])
-    return np.dot(psi, theta)
 
 def psi_all_states(state_space):
     # d x D**2
@@ -358,25 +285,13 @@ def psi_all_states(state_space):
                     arr_radial(state_space, (D-1,0)),
                      INTERCEPT*np.ones(len(state_space))])
 
-def vec_linear_reward(theta, s):
-    pass
-
 def lin_rew_func(theta, state_space):
     '''
     Using radial features above and theta below,
     gives a very close approximation to the true
     RF.
-
-    May want to vectorize?
     '''
     return np.reshape(theta.dot(psi_all_states(state_space)), (D, D))
-
-def expect_reward(rewards, st, at, TP, state_space):
-    '''
-    fix?
-    '''
-    si = state_space.index(st)
-    return TP[si, at].dot(np.ravel(rewards))
 
 def vec_expect_reward(rewards, s, a, TP, state_space):
     '''
@@ -650,17 +565,59 @@ def theta_grad(data, betas, sigsq, state_space, denom, vec, glogZ, lp, lq):
     p2 = np.swapaxes((sigsq/denom)[:,None,None] * np.einsum('ijk,ilk->ijl', gradR, vec), 1, 2)
     return np.sum(np.mean(p1 + p2*(lp - lq)[:,:,None], axis=1), axis=0)
 
-def grad_check(phi, alpha, sigsq, theta, data, Ti, m, state_space, B,
-               impa, ix):
+def grad_check_theta(phi, alpha, sigsq, theta, data, Ti,
+                     m, state_space, B, impa, ix):
     '''
     Theta grad computation pretty good for ix = 2, but terrible for
     ix = 1 and 3. Seems biased for 3? Giving -85ish when should be -217
 
     Only really unbiased for ix = 2...
 
-    HUGE upward bias for 4, on order of 6000 when should be ~1
+    HUGE upward bias for ix=4, on order of 6000 when should be ~1
+
+    Slightly biased on ix=0
 
     Very high variance.
+    '''
+    epsilon = 1e-4
+
+    R_all, E_all = RE_all(theta, data, TP, state_space, m)
+    betas = sample_all_MV_beta(phi, alpha, sigsq, theta, R_all, E_all,
+                           data, TP, state_space, B, m)
+    logZvec, glogZ = logZ(betas, impa, theta, data, M, TP, action_space)
+    one, vec, denom, vecnorm, gvec, gnorm = grad_terms(betas, phi,
+      alpha, sigsq, theta, data, R_all, E_all, Ti, logZvec, m)
+    lp = logp(state_space, Ti, sigsq, gnorm, data, TP, m, betas, R_all,
+      logZvec)
+    lq = logq(Ti, denom, vecnorm)
+    a_t_g = theta_grad(data, betas, sigsq, state_space, denom, vec, glogZ, lp, lq)
+
+    left = theta.copy()
+    left[ix] += epsilon
+    right = theta.copy()
+    right[ix] -= epsilon
+    R_all_l, E_all_l = RE_all(left, data, TP, state_space, m)
+    R_all_r, E_all_r = RE_all(right, data, TP, state_space, m)
+    logZvec_l, glogZ_l = logZ(betas, impa, left, data, M, TP, action_space)
+    one_l, vec_l, denom_l, vecnorm_l, gvec_l, gnorm_l = grad_terms(betas,
+      phi, alpha, sigsq, left, data, R_all_l, E_all_l, Ti, logZvec_l, m)
+    logZvec_r, glogZ_r = logZ(betas, impa, right, data, M, TP, action_space)
+    one_r, vec_r, denom_r, vecnorm_r, gvec_r, gnorm_r = grad_terms(betas,
+      phi, alpha, sigsq, right, data, R_all_r, E_all_r, Ti, logZvec_r, m)
+    lp_l = logp(state_space, Ti, sigsq, gnorm_l, data, TP, m, betas, R_all_l,
+      logZvec_l)
+    lp_r = logp(state_space, Ti, sigsq, gnorm_r, data, TP, m, betas, R_all_r,
+      logZvec_r)
+    lq_l = logq(Ti, denom_l, vecnorm_l)
+    lq_r = logq(Ti, denom_r, vecnorm_r)
+    n_t_g = (lp_l - lq_l - lp_r + lq_r)/(2*epsilon)
+    change = (n_t_g.mean(axis=1)).sum()
+    return a_t_g[ix], change
+
+def grad_check_phi(phi, alpha, sigsq, theta, data, Ti, m, state_space, B,
+               impa, ix):
+    '''
+    CHANGE
     '''
     epsilon = 1e-4
 
