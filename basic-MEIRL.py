@@ -24,7 +24,7 @@ WEIGHT = 2
 M = 20 # number of actions used for importance sampling
 N = 10 # number of trajectories per expert
 Ti = 50 # length of trajectory
-B = 20 # number of betas sampled for expectation
+B = 100 # number of betas sampled for expectation
 
 # Making gridworld
 state_space = np.array([(i,j) for i in range(D) for j in range(D)])
@@ -669,8 +669,8 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
           vecnorm)
     pass
 
-theta = np.array([4, 4, -6, -6, 0.1])
-sns.heatmap(lin_rew_func(theta, state_space))
+#theta = np.array([4, 4, -6, -6, 0.1])
+#sns.heatmap(lin_rew_func(theta, state_space))
 
 # Testing
 theta_h = np.random.rand(5)
@@ -678,9 +678,158 @@ alpha_h = np.random.rand(5)
 sigsq_h = np.random.rand()
 # MCES(0.8, 0.00001, 50, state_space, action_space,
 #                 rewards, init_policy, init_Q)
-reward_est, Q_h = Q_est(theta_h, 0.8, 50, state_space, action_space,
-                               init_policy, init_Q, tol=0.0001)
+#reward_est, Q_h = Q_est(theta_h, 0.8, 50, state_space, action_space,
+#                               init_policy, init_Q, tol=0.0001)
                         # FIX THIS 
 test_policy = locally_opt(Q_h, alpha_h, sigsq_h)[0]
 synth = synthetic_traj(reward_est, test_policy,
                        10, state_space, action_space, init_state_sample)
+
+
+
+
+
+
+
+##### Reparam trick? #####
+
+normals = np.array([np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), B) for i in range(m)])
+
+def grad_terms_re(normals, phi, alpha, sigsq, theta, data, R_all,
+             E_all, Ti, m):
+    '''
+    Computes quantities used in multiple computations of gradients.
+    '''
+    one = np.ones(Ti)
+    sc_normals = ((sigsq + phi[:,1])**(1/2))[:,None,None]*normals
+    aE = np.einsum('ij,ijk->ik', alpha, E_all)
+    #vec = betas - (sigsq[:,None]*R_all + aE + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:]
+    meanvec = sc_normals + (sigsq[:,None]*R_all + aE + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:]
+    denom = sigsq + phi[:,1]
+    #vecnorm = np.einsum('ijk,ijk->ij', vec, vec)  
+    gvec = sc_normals + (sigsq[:,None]*R_all + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:] #betas - aE[:,None,:]
+    gnorm = np.einsum('ijk,ijk->ij', gvec, gvec)
+    return one, meanvec, denom, gvec, gnorm
+
+def logp_re(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all, logZvec, meanvec):
+    # good?
+    p1 = np.log(rho(state_space)) - Ti/2*np.log(2*np.pi*sigsq)[:,None] - 1/(2*sigsq)[:,None]*gnorm
+    logT = np.log(traj_TP(data, TP, Ti, m))
+    p2 = np.einsum('ijk,ik->ij', meanvec, R_all) - logZvec + np.sum(logT, axis=1)[:,None]
+    return p1 + p2
+
+def logq_re(Ti, denom):
+    # good?
+    epsnorm = np.einsum('ijk,ijk->ij', normals, normals)
+    return -Ti/2*np.log(2*np.pi*denom)[:,None] - epsnorm/2
+
+def phi_grad_re(vec, one, denom, vecnorm, lp, lq):
+    '''
+    Output is m x 2; expectation is applied
+
+    Will need to make sure feasible
+    '''
+    num1 = vec.dot(one)
+    phigrad1 = num1/denom[:,None]
+    phigrad2 = -Ti/(2*denom)[:,None] + vecnorm/((2*denom**2)[:,None])
+    logdens = lp - lq
+    return np.array([(phigrad1 * logdens).mean(axis=1), (phigrad2 * logdens).mean(axis=1)]).transpose()
+
+def alpha_grad_re(E_all, gvec, vec, denom, lp, lq):
+    '''
+    Output m x p
+    '''
+    p1 = 1/sigsq[:,None,None]*np.einsum('ijk,ilk->ilj', E_all, gvec)
+    p2 = 1/denom[:,None,None]*np.einsum('ijk,ilk->ilj', E_all, vec)
+    return np.mean(p1 + p2*(lp - lq)[:,:,None], axis=1)
+
+def sigsq_grad_re(Ti, sigsq, gnorm, denom, R_all, vec, lp, lq, vecnorm):
+    '''
+    Output m x 1
+
+    Feasible!
+    '''
+    p1 = -Ti/(2*sigsq[:,None]) + gnorm/(2*sigsq[:,None]**2)
+    p2 = -Ti/(2*denom[:,None]) + np.einsum('ik,ilk->il', R_all, vec)/denom[:,None] + vecnorm/(2*denom[:,None]**2)
+    return np.mean(p1 + p2*(lp - lq), axis=1)
+
+def logZ_re(normals, meanvec, impa, theta, data, M, TP, action_space):
+    reward_est = lin_rew_func(theta, state_space)
+    R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
+                      imp_samp_data(data, impa, j, m, Ti).astype(int),
+                      TP, state_space) for j in range(M)]), 0, 1)
+    lst = []
+    for j in range(M):
+        newdata = imp_samp_data(data, impa, j, m, Ti).astype(int)
+        feat_expect = grad_lin_rew(newdata, state_space)
+        lst.append(feat_expect)
+    gradR_Z = np.swapaxes(np.array(lst), 0, 1)
+
+    volA = len(action_space) # m x N x Ti
+    expo = np.exp(np.einsum('ijk,ilk->ijlk', meanvec, R_Z))
+    lvec = np.log(volA*np.mean(expo,axis=2)) # for all times
+    logZvec = lvec.sum(axis=2)
+
+    gradR = grad_lin_rew(data, state_space) # m x d x Ti 
+    num1 = sigsq[:,None,None,None]*np.einsum('ijk,ilk->ijlk', R_Z, gradR)
+    num2 = np.einsum('ijk,ilmk->ijlmk', meanvec, gradR_Z)
+    num = expo[:,:,:,None,:]*(num1[:,None,:,:,:]+num2)
+    numsum = num.sum(axis=2)
+    den = expo.sum(axis=2)
+    glogZ = (numsum/den[:,:,None,:]).sum(axis=3)
+    return logZvec, glogZ
+
+def theta_grad_re(glogZ, data, state_space, R_all, E_all, sigsq, alpha):
+    '''
+    Output m x d
+    '''
+    gradR = grad_lin_rew(data, state_space)
+    X = sigsq[:,None]*R_all + np.einsum('ij,ijk->ik', alpha, E_all)
+    result = glogZ + np.einsum('ijk,ik->ij', gradR, X)[:,None,:]
+    return np.sum(np.mean(result, axis=1), axis=0)
+
+def grad_check_theta_re(phi, alpha, sigsq, theta, data, Ti,
+                     m, state_space, B, impa, ix):
+    '''
+    Much less variance! but still biased...
+    '''
+    epsilon = 1e-4
+
+    R_all, E_all = RE_all(theta, data, TP, state_space, m)
+    normals = np.array([np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), B) for i in range(m)])
+    #logZvec, glogZ = logZ(betas, impa, theta, data, M, TP, action_space)
+    one, meanvec, denom, gvec, gnorm = grad_terms_re(normals,
+      phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m)
+    #lp = logp(state_space, Ti, sigsq, gnorm, data, TP, m, betas, R_all,
+    #  logZvec)
+    #lq = logq(Ti, denom, vecnorm)
+
+    logZvec, glogZ = logZ_re(normals, meanvec, impa, theta, data, M, TP,
+                    action_space)
+    a_t_g = theta_grad_re(glogZ, data, state_space, R_all, E_all, sigsq, alpha)
+
+    left = theta.copy()
+    left[ix] += epsilon
+    right = theta.copy()
+    right[ix] -= epsilon
+    R_all_l, E_all_l = RE_all(left, data, TP, state_space, m)
+    R_all_r, E_all_r = RE_all(right, data, TP, state_space, m)
+    one_l, meanvec_l, denom_l, gvec_l, gnorm_l = grad_terms_re(normals,
+      phi, alpha, sigsq, left, data, R_all_l, E_all_l, Ti, m)
+    one_r, meanvec_r, denom_r, gvec_r, gnorm_r = grad_terms_re(normals,
+      phi, alpha, sigsq, right, data, R_all_r, E_all_r, Ti, m)
+    logZvec_l, glogZ_l = logZ_re(normals, meanvec_l, impa, left, data, M, TP, action_space)
+    logZvec_r, glogZ_r = logZ_re(normals, meanvec_r, impa, right, data, M, TP, action_space)
+
+    lp_l = logp_re(state_space, Ti, sigsq, gnorm_l, data, TP, m, normals, R_all_l,
+      logZvec_l, meanvec_l)
+    lp_r = logp_re(state_space, Ti, sigsq, gnorm_r, data, TP, m, normals, R_all_r,
+      logZvec_r, meanvec_r)
+    #lp_r = logp(state_space, Ti, sigsq, gnorm_r, data, TP, m, betas_r, R_all,
+    #  logZvec_r)
+    lq_l = logq_re(Ti, denom)
+    lq_r = lq_l
+
+    n_t_g = (lp_l - lq_l - lp_r + lq_r)/(2*epsilon)
+    change = (n_t_g.mean(axis=1)).sum()
+    return a_t_g[ix], change
