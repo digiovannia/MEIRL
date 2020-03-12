@@ -292,13 +292,6 @@ def lin_rew_func(theta, state_space):
     RF.
     '''
     return np.reshape(theta.dot(psi_all_states(state_space)), (D, D))
-
-def vec_expect_reward(rewards, s, a, TP, state_space):
-    '''
-    s is a list of state indices
-    a is list of actions
-    '''
-    return TP[s, a].dot(np.ravel(rewards))
     
 def arr_expect_reward(rewards, data, TP, state_space):
     '''
@@ -390,22 +383,7 @@ data = np.array(traj_data[0]) # for testing
 # second index is expert
 # third is states, actions
 
-def sample_MV_beta(i, phi, alpha, sigsq, theta, s, a, TP,
-                   state_space, B):
-    '''
-    s is list of indices
-
-    may delete
-    '''
-    reward_est = lin_rew_func(theta, state_space)
-    R = vec_expect_reward(reward_est, s, a, TP, state_space)
-    E = eta_mat(state_space[s])
-    mui = sigsq[i]*R + E.transpose().dot(alpha[i]) + phi[i,0]*np.ones(R.shape[0])
-    Covi = (sigsq[i]+phi[i,1])*np.eye(R.shape[0])
-    return np.random.multivariate_normal(mui, Covi, B)
-
 def eta_mat(data):
-    #VECTORIZE!
     arr = np.array([abs(data[:,0,:] // 6 - 1),
                     abs(data[:,0,:] % 6 - 1),
                     abs(data[:,0,:] // 6 - 4),
@@ -455,14 +433,9 @@ def logZ(betas, impa, theta, data, M, TP, action_space):
     '''
     Importance sampling approximation of logZ
     and grad logZ
-
-    May want to vectorize vec_expect_reward better to avoid 2 for-loops here
     '''
     reward_est = lin_rew_func(theta, state_space)
 
-    #R_all = np.array([[vec_expect_reward(reward_est, data[i][0],
-    #                  [impa[j]]*Ti, TP, state_space) for j in range(M)]
-    #                  for i in range(m)])
     R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
                       imp_samp_data(data, impa, j, m, Ti).astype(int),
                       TP, state_space) for j in range(M)]), 0, 1)
@@ -561,7 +534,9 @@ def theta_grad(data, betas, sigsq, state_space, denom, vec, glogZ, lp, lq):
     Output m x d
     '''
     gradR = grad_lin_rew(data, state_space) # m x d x Ti 
-    p1 = -glogZ + np.einsum('ijk,imk->imj', gradR, betas)
+    p1 = -glogZ + np.einsum('ijk,imk->imj', gradR, betas) # each term is quite large
+      #for theta index 0 and 4; however index 4 cancels entirely because psi is
+      #constant!
     p2 = np.swapaxes((sigsq/denom)[:,None,None] * np.einsum('ijk,ilk->ijl', gradR, vec), 1, 2)
     return np.sum(np.mean(p1 + p2*(lp - lq)[:,:,None], axis=1), axis=0)
 
@@ -578,6 +553,11 @@ def grad_check_theta(phi, alpha, sigsq, theta, data, Ti,
     Slightly biased on ix=0
 
     Very high variance.
+
+    Maybe bias is due to gradR. Not sure. The intercept is very large
+    hence 5th coord of gradR is also large, but the pattern for the other
+    parts doesn't quite fit.
+    * the inflation is tempered quite a bit by changing INTERCEPT to 1.
     '''
     epsilon = 1e-4
 
@@ -598,15 +578,19 @@ def grad_check_theta(phi, alpha, sigsq, theta, data, Ti,
     right[ix] -= epsilon
     R_all_l, E_all_l = RE_all(left, data, TP, state_space, m)
     R_all_r, E_all_r = RE_all(right, data, TP, state_space, m)
-    logZvec_l, glogZ_l = logZ(betas, impa, left, data, M, TP, action_space)
-    one_l, vec_l, denom_l, vecnorm_l, gvec_l, gnorm_l = grad_terms(betas,
+    betas_l = sample_all_MV_beta(phi, alpha, sigsq, left, R_all_l, E_all_l,
+                           data, TP, state_space, B, m)
+    betas_r = sample_all_MV_beta(phi, alpha, sigsq, right, R_all_r, E_all_r,
+                           data, TP, state_space, B, m)
+    logZvec_l, glogZ_l = logZ(betas_l, impa, left, data, M, TP, action_space)
+    one_l, vec_l, denom_l, vecnorm_l, gvec_l, gnorm_l = grad_terms(betas_l,
       phi, alpha, sigsq, left, data, R_all_l, E_all_l, Ti, logZvec_l, m)
-    logZvec_r, glogZ_r = logZ(betas, impa, right, data, M, TP, action_space)
-    one_r, vec_r, denom_r, vecnorm_r, gvec_r, gnorm_r = grad_terms(betas,
+    logZvec_r, glogZ_r = logZ(betas_r, impa, right, data, M, TP, action_space)
+    one_r, vec_r, denom_r, vecnorm_r, gvec_r, gnorm_r = grad_terms(betas_r,
       phi, alpha, sigsq, right, data, R_all_r, E_all_r, Ti, logZvec_r, m)
-    lp_l = logp(state_space, Ti, sigsq, gnorm_l, data, TP, m, betas, R_all_l,
+    lp_l = logp(state_space, Ti, sigsq, gnorm_l, data, TP, m, betas_l, R_all_l,
       logZvec_l)
-    lp_r = logp(state_space, Ti, sigsq, gnorm_r, data, TP, m, betas, R_all_r,
+    lp_r = logp(state_space, Ti, sigsq, gnorm_r, data, TP, m, betas_r, R_all_r,
       logZvec_r)
     lq_l = logq(Ti, denom_l, vecnorm_l)
     lq_r = logq(Ti, denom_r, vecnorm_r)
@@ -630,29 +614,32 @@ def grad_check_phi(phi, alpha, sigsq, theta, data, Ti, m, state_space, B,
     lp = logp(state_space, Ti, sigsq, gnorm, data, TP, m, betas, R_all,
       logZvec)
     lq = logq(Ti, denom, vecnorm)
-    a_t_g = theta_grad(data, betas, sigsq, state_space, denom, vec, glogZ, lp, lq)
+    a_p_g = phi_grad(vec, one, denom, vecnorm, lp, lq)
+    #a_t_g = theta_grad(data, betas, sigsq, state_space, denom, vec, glogZ, lp, lq)
 
-    left = theta.copy()
+    left = phi.copy()
     left[ix] += epsilon
-    right = theta.copy()
+    right = phi.copy()
     right[ix] -= epsilon
-    R_all_l, E_all_l = RE_all(left, data, TP, state_space, m)
-    R_all_r, E_all_r = RE_all(right, data, TP, state_space, m)
-    logZvec_l, glogZ_l = logZ(betas, impa, left, data, M, TP, action_space)
-    one_l, vec_l, denom_l, vecnorm_l, gvec_l, gnorm_l = grad_terms(betas,
-      phi, alpha, sigsq, left, data, R_all_l, E_all_l, Ti, logZvec_l, m)
-    logZvec_r, glogZ_r = logZ(betas, impa, right, data, M, TP, action_space)
-    one_r, vec_r, denom_r, vecnorm_r, gvec_r, gnorm_r = grad_terms(betas,
-      phi, alpha, sigsq, right, data, R_all_r, E_all_r, Ti, logZvec_r, m)
-    lp_l = logp(state_space, Ti, sigsq, gnorm_l, data, TP, m, betas, R_all_l,
+    betas_l = sample_all_MV_beta(left, alpha, sigsq, theta, R_all, E_all,
+                           data, TP, state_space, B, m)
+    betas_r = sample_all_MV_beta(right, alpha, sigsq, theta, R_all, E_all,
+                           data, TP, state_space, B, m)
+    logZvec_l, glogZ_l = logZ(betas_l, impa, theta, data, M, TP, action_space)
+    one_l, vec_l, denom_l, vecnorm_l, gvec_l, gnorm_l = grad_terms(betas_l,
+      left, alpha, sigsq, theta, data, R_all, E_all, Ti, logZvec_l, m)
+    logZvec_r, glogZ_r = logZ(betas_r, impa, theta, data, M, TP, action_space)
+    one_r, vec_r, denom_r, vecnorm_r, gvec_r, gnorm_r = grad_terms(betas_r,
+      right, alpha, sigsq, theta, data, R_all, E_all, Ti, logZvec_r, m)
+    lp_l = logp(state_space, Ti, sigsq, gnorm_l, data, TP, m, betas_l, R_all,
       logZvec_l)
-    lp_r = logp(state_space, Ti, sigsq, gnorm_r, data, TP, m, betas, R_all_r,
+    lp_r = logp(state_space, Ti, sigsq, gnorm_r, data, TP, m, betas_r, R_all,
       logZvec_r)
     lq_l = logq(Ti, denom_l, vecnorm_l)
     lq_r = logq(Ti, denom_r, vecnorm_r)
     n_t_g = (lp_l - lq_l - lp_r + lq_r)/(2*epsilon)
-    change = (n_t_g.mean(axis=1)).sum()
-    return a_t_g[ix], change
+    change = n_t_g.mean(axis=1)
+    return a_p_g[:,ix], change
 
 def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, N, Ti):
