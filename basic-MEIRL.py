@@ -735,13 +735,12 @@ def phi_grad_re(vec, one, denom, vecnorm, lp, lq):
     logdens = lp - lq
     return np.array([(phigrad1 * logdens).mean(axis=1), (phigrad2 * logdens).mean(axis=1)]).transpose()
 
-def alpha_grad_re(E_all, gvec, vec, denom, lp, lq):
+def alpha_grad_re(glogZ_alpha, E_all, gvec, vec, denom, lp, lq):
     '''
     Output m x p
     '''
-    p1 = 1/sigsq[:,None,None]*np.einsum('ijk,ilk->ilj', E_all, gvec)
-    p2 = 1/denom[:,None,None]*np.einsum('ijk,ilk->ilj', E_all, vec)
-    return np.mean(p1 + p2*(lp - lq)[:,:,None], axis=1)
+    result = -glogZ_alpha + np.einsum('ijk,ik->ij', E_all, R_all)[:,None,:]
+    return np.sum(np.mean(result, axis=1), axis=0)
 
 def sigsq_grad_re(Ti, sigsq, gnorm, denom, R_all, vec, lp, lq, vecnorm):
     '''
@@ -781,10 +780,25 @@ def logZ_re(normals, meanvec, impa, theta, data, M, TP, action_space):
     num = expo[:,:,:,None,:]*(num1[:,None,:,:,:]+num2)
     numsum = num.sum(axis=2)
     den = expo.sum(axis=2)
-    glogZ = (numsum/den[:,:,None,:]).sum(axis=3)
-    return logZvec, glogZ
+    glogZ_theta = (numsum/den[:,:,None,:]).sum(axis=3)
 
-def theta_grad_re(glogZ, data, state_space, R_all, E_all, sigsq, alpha):
+    num_a = expo[:,:,:,None,:]*np.einsum('ijk,ilk->ijlk', R_Z, E_all)[:,None,:,:,:]
+    numsum_a = num_a.sum(axis=2)
+    #num = expo[:,:,:,None,:]*(num1[:,None,:,:,:]+num2)
+    glogZ_alpha = (numsum_a/den[:,:,None,:]).sum(axis=3)
+
+    num_s = expo*np.einsum('ijk,ilk->iljk', R_Z, R_all[:,None,:] + normals)
+    numsum_s = num_s.sum(axis=2)
+    glogZ_sigsq = (numsum_s/den).sum(axis=2)
+
+    num_p1 = expo*R_Z[:,None,:,:]
+    num_p2 = expo*np.einsum('ijk,ilk->iljk', R_Z, normals)
+    numsum_p1 = num_p1.sum(axis=2)
+    numsum_p2 = num_p2.sum(axis=2)
+    glogZ_phi = np.array([(numsum_p1/den).sum(axis=2), (numsum_p2/den).sum(axis=2)])
+    return logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi
+
+def theta_grad_re(glogZ_theta, data, state_space, R_all, E_all, sigsq, alpha):
     '''
     Output m x d
 
@@ -811,7 +825,7 @@ def grad_check_theta_re(phi, alpha, sigsq, theta, data, Ti,
     one, meanvec, denom, gvec, gnorm = grad_terms_re(normals,
       phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m)
 
-    logZvec, glogZ = logZ_re(normals, meanvec, impa, theta, data, M, TP,
+    logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals, meanvec, impa, theta, data, M, TP,
                     action_space)
     a_t_g = theta_grad_re(glogZ, data, state_space, R_all, E_all, sigsq, alpha)
 
@@ -826,8 +840,8 @@ def grad_check_theta_re(phi, alpha, sigsq, theta, data, Ti,
       phi, alpha, sigsq, left, data, R_all_l, E_all_l, Ti, m)
     one_r, meanvec_r, denom_r, gvec_r, gnorm_r = grad_terms_re(normals,
       phi, alpha, sigsq, right, data, R_all_r, E_all_r, Ti, m)
-    logZvec_l, glogZ_l = logZ_re(normals, meanvec_l, impa, left, data, M, TP, action_space)
-    logZvec_r, glogZ_r = logZ_re(normals, meanvec_r, impa, right, data, M, TP, action_space)
+    logZvec_l, glogZ_theta_l, glogZ_alpha_l, glogZ_sigsq_l, glogZ_phi_l = logZ_re(normals, meanvec_l, impa, left, data, M, TP, action_space)
+    logZvec_r, glogZ_theta_r, glogZ_alpha_r, glogZ_sigsq_r, glogZ_phi_r = logZ_re(normals, meanvec_r, impa, right, data, M, TP, action_space)
 
     lp_l = logp_re(state_space, Ti, sigsq, gnorm_l, data, TP, m, normals, R_all_l,
       logZvec_l, meanvec_l)
