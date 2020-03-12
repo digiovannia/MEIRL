@@ -704,7 +704,7 @@ def grad_terms_re(normals, phi, alpha, sigsq, theta, data, R_all,
     sc_normals = ((sigsq + phi[:,1])**(1/2))[:,None,None]*normals
     aE = np.einsum('ij,ijk->ik', alpha, E_all)
     #vec = betas - (sigsq[:,None]*R_all + aE + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:]
-    meanvec = sc_normals + (sigsq[:,None]*R_all + aE + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:]
+    meanvec = sc_normals + (sigsq[:,None]*R_all + aE + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:] #looks good
     denom = sigsq + phi[:,1]
     #vecnorm = np.einsum('ijk,ijk->ij', vec, vec)  
     gvec = sc_normals + (sigsq[:,None]*R_all + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:] #betas - aE[:,None,:]
@@ -753,24 +753,29 @@ def sigsq_grad_re(Ti, sigsq, gnorm, denom, R_all, vec, lp, lq, vecnorm):
     p2 = -Ti/(2*denom[:,None]) + np.einsum('ik,ilk->il', R_all, vec)/denom[:,None] + vecnorm/(2*denom[:,None]**2)
     return np.mean(p1 + p2*(lp - lq), axis=1)
 
+def OLD_expect_reward(rewards, st, at, TP, state_space):
+    #si = state_index(st)
+    return TP[st, at].dot(np.ravel(rewards))
+
 def logZ_re(normals, meanvec, impa, theta, data, M, TP, action_space):
     reward_est = lin_rew_func(theta, state_space)
     R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
                       imp_samp_data(data, impa, j, m, Ti).astype(int),
                       TP, state_space) for j in range(M)]), 0, 1)
+                      # looks good, checked at multiple indices
     lst = []
     for j in range(M):
         newdata = imp_samp_data(data, impa, j, m, Ti).astype(int)
         feat_expect = grad_lin_rew(newdata, state_space)
         lst.append(feat_expect)
-    gradR_Z = np.swapaxes(np.array(lst), 0, 1)
+    gradR_Z = np.swapaxes(np.array(lst), 0, 1) # looks good
 
     volA = len(action_space) # m x N x Ti
-    expo = np.exp(np.einsum('ijk,ilk->ijlk', meanvec, R_Z))
-    lvec = np.log(volA*np.mean(expo,axis=2)) # for all times
+    expo = np.exp(np.einsum('ijk,ilk->ijlk', meanvec, R_Z)) #seems good
+    lvec = np.log(volA*np.mean(expo,axis=2)) 
     logZvec = lvec.sum(axis=2)
 
-    gradR = grad_lin_rew(data, state_space) # m x d x Ti 
+    gradR = grad_lin_rew(data, state_space) #good
     num1 = sigsq[:,None,None,None]*np.einsum('ijk,ilk->ijlk', R_Z, gradR)
     num2 = np.einsum('ijk,ilmk->ijlmk', meanvec, gradR_Z)
     num = expo[:,:,:,None,:]*(num1[:,None,:,:,:]+num2)
@@ -782,31 +787,34 @@ def logZ_re(normals, meanvec, impa, theta, data, M, TP, action_space):
 def theta_grad_re(glogZ, data, state_space, R_all, E_all, sigsq, alpha):
     '''
     Output m x d
+
+    WORKS!!!
     '''
     gradR = grad_lin_rew(data, state_space)
     X = sigsq[:,None]*R_all + np.einsum('ij,ijk->ik', alpha, E_all)
-    result = glogZ + np.einsum('ijk,ik->ij', gradR, X)[:,None,:]
+    result = -glogZ + np.einsum('ijk,ik->ij', gradR, X)[:,None,:]
     return np.sum(np.mean(result, axis=1), axis=0)
 
 def grad_check_theta_re(phi, alpha, sigsq, theta, data, Ti,
                      m, state_space, B, impa, ix):
     '''
     Much less variance! but still biased...
+
+    Deduced that the bias is in the grad log.
+    logZ itself is approximated, so as long as
+    consistent this should still work...?
     '''
     epsilon = 1e-4
 
     R_all, E_all = RE_all(theta, data, TP, state_space, m)
     normals = np.array([np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), B) for i in range(m)])
-    #logZvec, glogZ = logZ(betas, impa, theta, data, M, TP, action_space)
     one, meanvec, denom, gvec, gnorm = grad_terms_re(normals,
       phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m)
-    #lp = logp(state_space, Ti, sigsq, gnorm, data, TP, m, betas, R_all,
-    #  logZvec)
-    #lq = logq(Ti, denom, vecnorm)
 
     logZvec, glogZ = logZ_re(normals, meanvec, impa, theta, data, M, TP,
                     action_space)
     a_t_g = theta_grad_re(glogZ, data, state_space, R_all, E_all, sigsq, alpha)
+
 
     left = theta.copy()
     left[ix] += epsilon
@@ -825,8 +833,7 @@ def grad_check_theta_re(phi, alpha, sigsq, theta, data, Ti,
       logZvec_l, meanvec_l)
     lp_r = logp_re(state_space, Ti, sigsq, gnorm_r, data, TP, m, normals, R_all_r,
       logZvec_r, meanvec_r)
-    #lp_r = logp(state_space, Ti, sigsq, gnorm_r, data, TP, m, betas_r, R_all,
-    #  logZvec_r)
+    
     lq_l = logq_re(Ti, denom)
     lq_r = lq_l
 
