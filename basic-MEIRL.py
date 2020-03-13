@@ -1,7 +1,6 @@
 import numpy as np 
 import matplotlib.pyplot as plt
 import seaborn as sns
-import random
 
 '''
 A very simple dxd gridworld to test out multiple-experts IRL.
@@ -680,13 +679,7 @@ sigsq_h = np.random.rand()
 #                 rewards, init_policy, init_Q)
 #reward_est, Q_h = Q_est(theta_h, 0.8, 50, state_space, action_space,
 #                               init_policy, init_Q, tol=0.0001)
-                        # FIX THIS 
-test_policy = locally_opt(Q_h, alpha_h, sigsq_h)[0]
-synth = synthetic_traj(reward_est, test_policy,
-                       10, state_space, action_space, init_state_sample)
-
-
-
+                        # FIX THIS
 
 
 
@@ -894,8 +887,8 @@ def grad_check_sigsq_re(phi, alpha, sigsq, theta, data, Ti,
     lp_r = logp_re(state_space, Ti, right, gnorm_r, data, TP, m, normals, R_all,
       logZvec_r, meanvec_r)
     
-    lq_l = logq_re(Ti, denom)
-    lq_r = lq_l
+    lq_l = logq_re(Ti, denom_l)
+    lq_r = logq_re(Ti, denom_r)
 
     n_t_g = (lp_l - lq_l - lp_r + lq_r)/(2*epsilon)
     change = n_t_g.mean(axis=1)
