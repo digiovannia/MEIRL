@@ -697,22 +697,18 @@ def grad_terms_re(normals, phi, alpha, sigsq, theta, data, R_all,
     denom = sigsq + phi[:,1]
     sc_normals = (denom**(1/2))[:,None,None]*normals
     aE = np.einsum('ij,ijk->ik', alpha, E_all)
-    #vec = betas - (sigsq[:,None]*R_all + aE + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:]
     meanvec = sc_normals + (sigsq[:,None]*R_all + aE + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:] #looks good
-    #vecnorm = np.einsum('ijk,ijk->ij', vec, vec)  
     gvec = sc_normals + (sigsq[:,None]*R_all + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:] #betas - aE[:,None,:]
     gnorm = np.einsum('ijk,ijk->ij', gvec, gvec)
     return one, meanvec, denom, gvec, gnorm
 
 def logp_re(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all, logZvec, meanvec):
-    # good?
     p1 = np.log(rho(state_space)) - Ti/2*np.log(2*np.pi*sigsq)[:,None] - 1/(2*sigsq)[:,None]*gnorm
     logT = np.log(traj_TP(data, TP, Ti, m))
     p2 = np.einsum('ijk,ik->ij', meanvec, R_all) - logZvec + np.sum(logT, axis=1)[:,None]
     return p1 + p2
 
 def logq_re(Ti, denom):
-    # good?
     epsnorm = np.einsum('ijk,ijk->ij', normals, normals)
     return -Ti/2*np.log(2*np.pi*denom)[:,None] - epsnorm/2
 
@@ -720,16 +716,13 @@ def phi_grad_re(phi, m, Ti, normals, denom, sigsq, glogZ_phi):
     '''
     Output is m x 2; expectation is applied
 
-    Will need to make sure feasible
+    WORKS, but slightly high variance
+    
+    Feasible?
     '''
-    #num1 = vec.dot(one)
-    #phigrad1 = num1/denom[:,None]
-    #phigrad2 = -Ti/(2*denom)[:,None] + vecnorm/((2*denom**2)[:,None])
-    #logdens = lp - lq
-    #return np.array([(phigrad1 * logdens).mean(axis=1), (phigrad2 * logdens).mean(axis=1)]).transpose()
     x = (phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:] + (denom**(1/2))[:,None,None]*normals
     y1 = 1/sigsq[:,None]*x.sum(axis=2)
-    y2 = np.einsum('ijk,ijk->ij', normals, x)/((2*sigsq*denom**(1/2))[:,None])
+    y2 = np.einsum('ijk,ijk->ij', normals, x)/((2*sigsq*denom**(1/2))[:,None]) - Ti/(2*denom)[:,None]
     result = -glogZ_phi - np.stack((y1, y2))
     return np.swapaxes(np.mean(result, axis=2), 0, 1)
 
@@ -754,9 +747,6 @@ def sigsq_grad_re(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all,
     z = 1/(sigsq[:,None])*np.einsum('ijk,ijk->ij', z1, gvec)
     w = 1/(2*sigsq**2)[:,None]*gnorm
     result = -glogZ_sigsq + x[:,None] + y - z + w - q_grad[:,None]
-      # maybe exclude q_grad? but still off a bit
-    #p1 = -Ti/(2*sigsq[:,None]) + gnorm/(2*sigsq[:,None]**2)
-    #p2 = -Ti/(2*denom[:,None]) + np.einsum('ik,ilk->il', R_all, vec)/denom[:,None] + vecnorm/(2*denom[:,None]**2)
     return np.mean(result, axis=1)
 
 def OLD_expect_reward(rewards, st, at, TP, state_space):
@@ -768,20 +758,19 @@ def logZ_re(normals, meanvec, denom, impa, theta, data, M, TP, action_space):
     R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
                       imp_samp_data(data, impa, j, m, Ti).astype(int),
                       TP, state_space) for j in range(M)]), 0, 1)
-                      # looks good, checked at multiple indices
     lst = []
     for j in range(M):
         newdata = imp_samp_data(data, impa, j, m, Ti).astype(int)
         feat_expect = grad_lin_rew(newdata, state_space)
         lst.append(feat_expect)
-    gradR_Z = np.swapaxes(np.array(lst), 0, 1) # looks good
+    gradR_Z = np.swapaxes(np.array(lst), 0, 1)
 
     volA = len(action_space) # m x N x Ti
-    expo = np.exp(np.einsum('ijk,ilk->ijlk', meanvec, R_Z)) #seems good
+    expo = np.exp(np.einsum('ijk,ilk->ijlk', meanvec, R_Z))
     lvec = np.log(volA*np.mean(expo,axis=2)) 
     logZvec = lvec.sum(axis=2)
 
-    gradR = grad_lin_rew(data, state_space) #good
+    gradR = grad_lin_rew(data, state_space)
     num1 = sigsq[:,None,None,None]*np.einsum('ijk,ilk->ijlk', R_Z, gradR)
     num2 = np.einsum('ijk,ilmk->ijlmk', meanvec, gradR_Z)
     num = expo[:,:,:,None,:]*(num1[:,None,:,:,:]+num2)
@@ -789,9 +778,8 @@ def logZ_re(normals, meanvec, denom, impa, theta, data, M, TP, action_space):
     den = expo.sum(axis=2)
     glogZ_theta = (numsum/den[:,:,None,:]).sum(axis=3)
 
-    num_a = expo[:,:,:,None,:]*np.einsum('ijk,ilk->ijlk', R_Z, E_all)[:,None,:,:,:] #good
+    num_a = expo[:,:,:,None,:]*np.einsum('ijk,ilk->ijlk', R_Z, E_all)[:,None,:,:,:]
     numsum_a = num_a.sum(axis=2)
-    #num = expo[:,:,:,None,:]*(num1[:,None,:,:,:]+num2)
     glogZ_alpha = (numsum_a/den[:,:,None,:]).sum(axis=3)
 
     num_s = expo*np.einsum('ijk,ilk->iljk', R_Z, R_all[:,None,:] + normals/((2*denom**2)[:,None,None]))
