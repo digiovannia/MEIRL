@@ -24,6 +24,7 @@ M = 20 # number of actions used for importance sampling
 N = 10 # number of trajectories per expert
 Ti = 50 # length of trajectory
 B = 100 # number of betas sampled for expectation
+learn_rate = 0.001
 
 # Making gridworld
 state_space = np.array([(i,j) for i in range(D) for j in range(D)])
@@ -267,12 +268,6 @@ pol4 = locally_opt(Q, alpha4, sigsq4)[0]
 
 ###### Phase 2 ######
 
-# Initializations
-phi = np.random.rand(m,2)
-alpha = np.random.normal(size=(m,p))
-sigsq = np.random.rand(m)
-theta = np.random.normal(size=d)
-
 def arr_radial(s, c):
     return np.exp(-5*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
 
@@ -376,12 +371,6 @@ def make_data(Q, alphas, sigsqs, reward_str, N, Ti):
     # second is m
     return trajectories 
 
-traj_data = make_data(Q, ex_alphas, ex_sigsqs, rewards, N, Ti)
-data = np.array(traj_data[0]) # for testing
-# first index is n=1 to N
-# second index is expert
-# third is states, actions
-
 def eta_mat(data):
     arr = np.array([abs(data[:,0,:] // 6 - 1),
                     abs(data[:,0,:] % 6 - 1),
@@ -438,14 +427,21 @@ def traj_TP(data, TP, Ti, m):
     s2_thru_sTi = TP[data[:,0,:(Ti-1)],data[:,1,:(Ti-1)]]
     return s2_thru_sTi[np.arange(m)[:,None], np.arange(Ti-1), data[:,0,1:]]
 
-impa = uniform_action_sample(action_space, M)
-R_all, E_all = RE_all(theta, data, TP, state_space, m)
-betas = sample_all_MV_beta(phi, alpha, sigsq, theta, R_all, E_all,
-                           data, TP, state_space, B, m)
-logZvec, glogZ = logZ(betas, impa, theta, data, M, TP, action_space)
+# Initializations
+phi = np.random.rand(m,2)
+alpha = np.random.normal(size=(m,p))
+sigsq = np.random.rand(m)
+theta = np.random.normal(size=d)
+
+
+traj_data = make_data(Q, ex_alphas, ex_sigsqs, rewards, N, Ti)
+data = np.array(traj_data[0]) # for testing
+# first index is n=1 to N
+# second index is expert
+# third is states, actions
 
 def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, N, Ti):
+         action_space, B, m, M, N, Ti, learn_rate):
     '''
     Need the expert trajectories
 
@@ -463,6 +459,11 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
           phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m)
         logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals,
           meanvec, denom, impa, theta, data, M, TP, action_space)
+        
+        lp = logp_re(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all,
+          logZvec, meanvec).mean(axis=1).sum()
+        lq = logq_re(Ti, denom).mean(axis=1).sum()
+        print(lp - lq)
             
         g_phi = phi_grad_re(phi, m, Ti, normals, denom, sigsq, glogZ_phi)
         g_theta = theta_grad_re(glogZ_theta, data, state_space, R_all, E_all,
@@ -470,6 +471,14 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
         g_alpha = alpha_grad_re(glogZ_alpha, E_all, R_all)
         g_sigsq = sigsq_grad_re(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom,
           R_all, gvec)
+        
+        phi = phi + learn_rate*g_phi
+        phi[:,1] = np.maximum(phi[:,1], 0.01)
+        theta = theta + learn_rate*g_theta
+        alpha = alpha + learn_rate*g_alpha
+        sigsq = np.maximum(sigsq + learn_rate*g_sigsq, 0.01)
+        
+        learn_rate *= 0.99
     pass
 
 #theta = np.array([4, 4, -6, -6, 0.1])
@@ -550,7 +559,7 @@ def logZ_re(normals, meanvec, denom, impa, theta, data, M, TP, action_space):
     gradR_Z = np.swapaxes(np.array(lst), 0, 1)
 
     volA = len(action_space) # m x N x Ti
-    expo = np.exp(np.einsum('ijk,ilk->ijlk', meanvec, R_Z))
+    expo = np.exp(np.einsum('ijk,ilk->ijlk', meanvec, R_Z)) #getting ZEROS
     lvec = np.log(volA*np.mean(expo,axis=2)) 
     logZvec = lvec.sum(axis=2)
 
