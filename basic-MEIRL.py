@@ -558,9 +558,12 @@ def logZ_re(normals, meanvec, denom, impa, theta, data, M, TP, action_space):
         lst.append(feat_expect)
     gradR_Z = np.swapaxes(np.array(lst), 0, 1)
 
-    volA = len(action_space) # m x N x Ti
-    expo = np.exp(np.einsum('ijk,ilk->ijlk', meanvec, R_Z)) #getting ZEROS
-    lvec = np.log(volA*np.mean(expo,axis=2)) 
+    volA = len(action_space) # m x N x Ti 
+    bterm = np.einsum('ijk,ilk->ijlk', meanvec, R_Z)
+    K = np.max(bterm)
+    expo = np.exp(bterm - K) #getting ZEROS and INFs
+    # USE LOG SUM EXP TRICK
+    lvec = np.log(volA*np.mean(expo,axis=2)) + K
     logZvec = lvec.sum(axis=2)
 
     gradR = grad_lin_rew(data, state_space)
