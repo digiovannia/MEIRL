@@ -451,6 +451,7 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
             logZvec, meanvec).mean(axis=1).sum()
           lq = logq_re(Ti, denom).mean(axis=1).sum()
           elbo.append(lp - lq)
+          print(lp - lq)
           #-2544
           #-74553.34167368022
           #-224548.54362581347
@@ -473,7 +474,7 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
     return phi, theta, alpha, sigsq
 
 phi_star, theta_star, alpha_star, sigsq_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 10)
+         action_space, B, m, M, Ti, learn_rate, 20)
 
 #theta = np.array([4, 4, -6, -6, 0.1])
 #sns.heatmap(lin_rew_func(theta, state_space))
@@ -601,6 +602,15 @@ def theta_grad_re(glogZ_theta, data, state_space, R_all, E_all, sigsq, alpha):
     X = sigsq[:,None]*R_all + np.einsum('ij,ijk->ik', alpha, E_all)
     result = -glogZ_theta + np.einsum('ijk,ik->ij', gradR, X)[:,None,:]
     return np.sum(np.mean(result, axis=1), axis=0)
+
+'''
+TO DO:
+* make function that runs episodes with policy and
+  collects rewards
+* make function that trains a Q-learner on rewards
+  defined by a given theta and compare reward
+  gained by inferred theta vs true
+'''
 
 #def total_reward(reps):
 #    episode(s,T,policy,rewards,step_func,a=-1)
