@@ -24,7 +24,7 @@ M = 20 # number of actions used for importance sampling
 N = 10 # number of trajectories per expert
 Ti = 50 # length of trajectory
 B = 100 # number of betas sampled for expectation
-learn_rate = 0.001
+learn_rate = 0.0001
 
 # Making gridworld
 state_space = np.array([(i,j) for i in range(D) for j in range(D)])
