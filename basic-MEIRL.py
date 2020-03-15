@@ -434,6 +434,7 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
     '''
     impa = uniform_action_sample(action_space, M)
     N = len(traj_data)
+    elbo = []
     # while error > eps:
     for _ in range(reps):
       for n in range(N):
@@ -449,7 +450,7 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
           lp = logp_re(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all,
             logZvec, meanvec).mean(axis=1).sum()
           lq = logq_re(Ti, denom).mean(axis=1).sum()
-          print(lp - lq)
+          elbo.append(lp - lq)
           #-2544
           #-74553.34167368022
           #-224548.54362581347
@@ -468,10 +469,11 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
           sigsq = np.maximum(sigsq + learn_rate*g_sigsq, 0.01)
           
           learn_rate *= 0.99
+    plt.plot(elbo)
     return phi, theta, alpha, sigsq
 
 phi_star, theta_star, alpha_star, sigsq_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1)
+         action_space, B, m, M, Ti, learn_rate, 10)
 
 #theta = np.array([4, 4, -6, -6, 0.1])
 #sns.heatmap(lin_rew_func(theta, state_space))
@@ -560,19 +562,19 @@ def logZ_re(normals, meanvec, denom, impa, theta, data, M, TP,
 
     volA = len(action_space) # m x N x Ti 
     bterm = np.einsum('ijk,ilk->ijlk', meanvec, R_Z)
-    #K = np.max(bterm)
-    #expo = np.exp(bterm - K) #getting ZEROS and INFs
-    # USE LOG SUM EXP TRICK
+    expo = np.exp(bterm) #getting ZEROS and INFs
     lvec = np.log(volA) + log_mean_exp(bterm)#+ np.log(np.mean(expo,axis=2)) + K
     logZvec = lvec.sum(axis=2)
 
     gradR = grad_lin_rew(data, state_space)
     num1 = sigsq[:,None,None,None]*np.einsum('ijk,ilk->ijlk', R_Z, gradR)
     num2 = np.einsum('ijk,ilmk->ijlmk', meanvec, gradR_Z)
+    expo = np.exp(bterm - np.max(bterm, axis=2)[:,:,None,:])
     num = expo[:,:,:,None,:]*(num1[:,None,:,:,:]+num2)
     numsum = num.sum(axis=2)
     den = expo.sum(axis=2)
     glogZ_theta = (numsum/den[:,:,None,:]).sum(axis=3)
+
 
     num_a = expo[:,:,:,None,:]*np.einsum('ijk,ilk->ijlk', R_Z, E_all)[:,None,:,:,:]
     numsum_a = num_a.sum(axis=2)
@@ -600,9 +602,9 @@ def theta_grad_re(glogZ_theta, data, state_space, R_all, E_all, sigsq, alpha):
     result = -glogZ_theta + np.einsum('ijk,ik->ij', gradR, X)[:,None,:]
     return np.sum(np.mean(result, axis=1), axis=0)
 
-def total_reward(reps):
-    episode(s,T,policy,rewards,step_func,a=-1)
-    pass
+#def total_reward(reps):
+#    episode(s,T,policy,rewards,step_func,a=-1)
+#    pass
 
 
 
