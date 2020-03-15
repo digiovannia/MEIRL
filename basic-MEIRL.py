@@ -614,9 +614,13 @@ TO DO:
   gained by inferred theta vs true
 '''
 
-#def total_reward(reps):
-#    episode(s,T,policy,rewards,step_func,a=-1)
-#    pass
+def total_reward(reps, policy, T, state_space, rewards):
+    reward_list = []
+    for _ in range(reps):
+        s = state_space[np.random.choice(len(state_space))]
+        ret = np.sum(episode(s,T,policy,rewards,grid_step)[2]) #true reward
+        reward_list.append(ret)
+    return reward_list
 
 
 
