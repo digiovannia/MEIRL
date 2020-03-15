@@ -451,10 +451,7 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
             logZvec, meanvec).mean(axis=1).sum()
           lq = logq_re(Ti, denom).mean(axis=1).sum()
           elbo.append(lp - lq)
-          print(lp - lq)
-          #-2544
-          #-74553.34167368022
-          #-224548.54362581347
+          #print(lp - lq)
               
           g_phi = phi_grad_re(phi, m, Ti, normals, denom, sigsq, glogZ_phi)
           g_theta = theta_grad_re(glogZ_theta, data, state_space, R_all, E_all,
@@ -475,9 +472,11 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
 
 phi_star, theta_star, alpha_star, sigsq_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 20)
+phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 50)
 
-#theta = np.array([4, 4, -6, -6, 0.1])
-#sns.heatmap(lin_rew_func(theta, state_space))
+theta = np.array([4, 4, -6, -6, 0.1])
+sns.heatmap(lin_rew_func(theta, state_space))
 
 normals = np.array([np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), B) for i in range(m)])
 
