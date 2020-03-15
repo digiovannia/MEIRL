@@ -411,62 +411,77 @@ def traj_TP(data, TP, Ti, m):
     s2_thru_sTi = TP[data[:,0,:(Ti-1)],data[:,1,:(Ti-1)]]
     return s2_thru_sTi[np.arange(m)[:,None], np.arange(Ti-1), data[:,0,1:]]
 
-# Initializations
-phi = np.random.rand(m,2)
-alpha = np.random.normal(size=(m,p))
-sigsq = np.random.rand(m)
-theta = np.random.normal(size=d)
 
+def SGD(phi, theta, alpha, sigsq, g_phi, g_theta, g_alpha, g_sigsq, learn_rate):
+    phi = phi + learn_rate*g_phi
+    phi[:,1] = np.maximum(phi[:,1], 0.01)
+    theta = theta + learn_rate*g_theta
+    alpha = alpha + learn_rate*g_alpha
+    sigsq = np.maximum(sigsq + learn_rate*g_sigsq, 0.01)
+    return phi, theta, alpha, sigsq
 
-traj_data = make_data(Q, ex_alphas, ex_sigsqs, rewards, N, Ti)
-data = np.array(traj_data[0]) # for testing
-# first index is n=1 to N
-# second index is expert
-# third is states, actions
+def y_t_SGD(phi, phi_m, theta, theta_m, alpha, alpha_m, sigsq, sigsq_m, t):
+    return phi, theta, alpha, sigsq
+
+def y_t_nest(phi, phi_m, theta, theta_m, alpha, alpha_m, sigsq, sigsq_m, t):
+    const = (t-1)/(t+2)
+    phi += const*(phi - phi_m)
+    theta += const*(theta - theta_m)
+    alpha += const*(alpha - alpha_m)
+    sigsq += const*(sigsq - sigsq_m)
+    return phi, theta, alpha, sigsq
 
 def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps):
+         action_space, B, m, M, Ti, learn_rate, reps, y_t, update):
     '''
     Need the expert trajectories
 
-    1) Init theta, alpha, sigsq, phi
-    2) 
+    y_t is the function used to define modified iterate for Nesterov, if
+    applicable
+    
+    update is e.g. SGD or Adam
     '''
     impa = uniform_action_sample(action_space, M)
     N = len(traj_data)
     elbo = []
+    phi_m = np.zeros_like(phi)
+    theta_m = np.zeros_like(theta)
+    alpha_m = np.zeros_like(alpha)
+    sigsq_m = np.zeros_like(sigsq)
+    t = 1
     # while error > eps:
     for _ in range(reps):
-      for n in range(N):
-          data = np.array(traj_data[n]) # m x 2 x Ti
-          R_all, E_all = RE_all(theta, data, TP, state_space, m)
-          normals = np.array([np.random.multivariate_normal(np.zeros(Ti),
-            np.eye(Ti), B) for i in range(m)])
-          meanvec, denom, gvec, gnorm = grad_terms_re(normals,
-            phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m)
-          logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals,
-            meanvec, denom, impa, theta, data, M, TP, R_all, E_all, action_space)
+        for n in range(N):
+            y_phi, y_theta, y_alpha, y_sigsq = y_t(phi, phi_m, theta, theta_m,
+              alpha, alpha_m, sigsq, sigsq_m, t)
+            data = np.array(traj_data[n]) # m x 2 x Ti
+            R_all, E_all = RE_all(y_theta, data, TP, state_space, m)
+            normals = np.array([np.random.multivariate_normal(np.zeros(Ti),
+              np.eye(Ti), B) for i in range(m)])
+            meanvec, denom, gvec, gnorm = grad_terms_re(normals,
+              y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
+            logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals,
+              meanvec, denom, impa, y_theta, data, M, TP, R_all, E_all, action_space)
           
-          lp = logp_re(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all,
-            logZvec, meanvec).mean(axis=1).sum()
-          lq = logq_re(Ti, denom, normals).mean(axis=1).sum()
-          elbo.append(lp - lq)
-          #print(lp - lq)
+            lp = logp_re(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
+              logZvec, meanvec).mean(axis=1).sum()
+            lq = logq_re(Ti, denom, normals).mean(axis=1).sum()
+            elbo.append(lp - lq)
+            #print(lp - lq)
               
-          g_phi = phi_grad_re(phi, m, Ti, normals, denom, sigsq, glogZ_phi)
-          g_theta = theta_grad_re(glogZ_theta, data, state_space, R_all, E_all,
-            sigsq, alpha)
-          g_alpha = alpha_grad_re(glogZ_alpha, E_all, R_all)
-          g_sigsq = sigsq_grad_re(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom,
-            R_all, gvec)
+            g_phi = phi_grad_re(y_phi, m, Ti, normals, denom, y_sigsq, glogZ_phi)
+            g_theta = theta_grad_re(glogZ_theta, data, state_space, R_all, E_all,
+              y_sigsq, y_alpha)
+            g_alpha = alpha_grad_re(glogZ_alpha, E_all, R_all)
+            g_sigsq = sigsq_grad_re(glogZ_sigsq, normals, Ti, y_sigsq, gnorm, denom,
+              R_all, gvec)
           
-          phi = phi + learn_rate*g_phi
-          phi[:,1] = np.maximum(phi[:,1], 0.01)
-          theta = theta + learn_rate*g_theta
-          alpha = alpha + learn_rate*g_alpha
-          sigsq = np.maximum(sigsq + learn_rate*g_sigsq, 0.01)
-          
-          learn_rate *= 0.99
+            phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
+            phi, theta, alpha, sigsq = update(y_phi, y_theta, y_alpha, y_sigsq, g_phi,
+              g_theta, g_alpha, g_sigsq, learn_rate)
+            
+            learn_rate *= 0.99
+            t += 1
     plt.plot(elbo)
     return phi, theta, alpha, sigsq
 
@@ -609,14 +624,51 @@ def total_reward(reps, policy, T, state_space, rewards):
         reward_list.append(ret)
     return reward_list
 
+def cumulative_reward(reps, policy, T, state_space, rewards):
+    reward_list = []
+    for _ in range(reps):
+        s = state_space[np.random.choice(len(state_space))]
+        ret = episode(s,T,policy,rewards,grid_step)[2] #true reward
+        reward_list.extend(ret)
+    return reward_list
+
+def evaluate(reps, policy, T, state_space, rewards, theta_est, init_policy,
+             init_Q):
+    reward_est = lin_rew_func(theta_est, state_space)
+    est_policy = Qlearn(0.5, 0.8, 0.1, 10000, 20, state_space,
+          action_space, reward_est, init_policy, init_Q)[0]
+    true_rew = cumulative_reward(reps, policy, T, state_space, rewards)
+    est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
+    plt.plot(np.cumsum(true_rew))
+    plt.plot(np.cumsum(est_rew))
+    
+# Initializations
+np.random.seed(1)
+    
+phi = np.random.rand(m,2)
+alpha = np.random.normal(size=(m,p))
+sigsq = np.random.rand(m)
+theta = np.random.normal(size=d)
+
+
+traj_data = make_data(Q, ex_alphas, ex_sigsqs, rewards, N, Ti)
+data = np.array(traj_data[0]) # for testing
+# first index is n=1 to N
+# second index is expert
+# third is states, actions
+
+M = 20 # number of actions used for importance sampling
+N = 20 # number of trajectories per expert
+B = 100 # number of betas sampled for expectation
 
 phi_star, theta_star, alpha_star, sigsq_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 20)
+         action_space, B, m, M, Ti, learn_rate, 20, y_t_nest, SGD)
 phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 50)
+         action_space, B, m, M, Ti, learn_rate, 50, y_t_nest, SGD)
 phi_star_3, theta_star_3, alpha_star_3, sigsq_star_3 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 50)
+         action_space, B, m, M, Ti, learn_rate, 50, y_t_nest, SGD)
 # The above is REALLY CLOSE!!!
+# wait nvm seems sensitive to init...
 
 theta = np.array([4, 4, -6, -6, 0.1])
 sns.heatmap(lin_rew_func(theta, state_space))
