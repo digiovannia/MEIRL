@@ -220,6 +220,14 @@ def locally_opt(Q_star, alpha, sigsq):
     det_pol = np.argmax(policy, axis=2)
     return policy, det_pol
 
+def locally_myo(i, alpha, sigsq):
+    '''
+    '''
+    beta = beta_func(alpha[i], sigsq[i])
+    
+    pass
+
+
 '''
 Going to test on trajectories from Q* model rather than one-step,
 will see how bad...
@@ -309,24 +317,55 @@ def grad_lin_rew(data, state_space):
 
 def init_state_sample(state_space):
     '''
-    Returns initial state; uniform
+    Returns initial state index; uniform for simplicity
     '''
-    s = state_space[np.random.choice(len(state_space))]
-    return s
+    return state_space[np.random.choice(len(state_space))]
 
-def synthetic_traj(rewards, policy, Ti, state_space, action_space, init_state_sample):
+def myo_policy(beta, s, TP, rewards):
+    expect_rew = TP[state_index(s)].dot(np.ravel(rewards))
+    return softmax(expect_rew, beta)
+
+def synthetic_traj_myo(rewards, alpha, i, Ti, state_space, action_space,
+                       init_state_sample, TP):
     '''
     Generate a fake trajectory based on given
     policy. Need to separately generate
     variational distribution parameters if want to
     use those.
+    
+    EDIT FOR LOCALLY OPT
     '''
     s = init_state_sample(state_space)
-    a = np.random.choice(action_space, p=policy[tuple(s)])
-    states, actions, reward_list = episode(s,Ti,policy,rewards,
-                              grid_step,a=a)
-    states = list(multi_state_index(states))
-    return states, actions, reward_list
+    states = [s]
+    beta = mu(s, alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
+    a = np.random.choice(action_space, p = myo_policy(beta, s,
+               TP, rewards))
+    actions = [a]
+    for _ in range(Ti-1):
+        s = grid_step(state_space[tuple(s)],a)
+        states.append(s)
+        beta = mu(s, alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
+        a = np.random.choice(action_space, p = myo_policy(beta, s,
+               TP, rewards))
+        actions.append(a)
+    return list(multi_state_index(np.array(states))), actions
+    
+    '''
+    states = [s]
+    if a < 0:
+        a = np.random.choice(action_space, p=policy[tuple(s)])
+    actions = [a]
+    reward_list = [0]
+    for _ in range(T-1):
+        s = step_func(s,a)
+        states.append(s)
+        r = rewards[tuple(s)]
+        reward_list.append(r)
+        a = np.random.choice(action_space, p=policy[tuple(s)])
+        actions.append(a)
+    reward_list.append(rewards[tuple(s)])
+    return np.array(states), actions, reward_list
+    '''
 
 def see_trajectory(reward_map, state_seq):
     '''
@@ -354,21 +393,6 @@ def make_data(Q, alphas, sigsqs, reward_str, N, Ti):
     # first index is N
     # second is m
     return trajectories 
-
-def locally_opt(Q_star, alpha, sigsq):
-    '''
-    Given optimal Q* and some "state of expertise",
-    returns a stochastic policy for an agent whose
-    beta is ideal centered around that state.
-
-    high beta = high expertise
-
-    CHANGE THIS
-    '''
-    beta = beta_func(alpha, sigsq)
-    policy = softmax(Q_star, beta, 2)
-    det_pol = np.argmax(policy, axis=2)
-    return policy, det_pol
 
 def make_data_myopic(Q, alphas, sigsqs, reward_str, N, Ti):
     '''
