@@ -425,7 +425,7 @@ data = np.array(traj_data[0]) # for testing
 # third is states, actions
 
 def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, N, Ti, learn_rate):
+         action_space, B, m, M, Ti, learn_rate, reps):
     '''
     Need the expert trajectories
 
@@ -433,37 +433,45 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
     2) 
     '''
     impa = uniform_action_sample(action_space, M)
+    N = len(traj_data)
     # while error > eps:
-    for n in range(N):
-        data = np.array(traj_data[n]) # m x 2 x Ti
-        R_all, E_all = RE_all(theta, data, TP, state_space, m)
-        normals = np.array([np.random.multivariate_normal(np.zeros(Ti),
-          np.eye(Ti), B) for i in range(m)])
-        meanvec, denom, gvec, gnorm = grad_terms_re(normals,
-          phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m)
-        logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals,
-          meanvec, denom, impa, theta, data, M, TP, R_all, E_all, action_space)
-        
-        lp = logp_re(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all,
-          logZvec, meanvec).mean(axis=1).sum()
-        lq = logq_re(Ti, denom).mean(axis=1).sum()
-        print(lp - lq)
-            
-        g_phi = phi_grad_re(phi, m, Ti, normals, denom, sigsq, glogZ_phi)
-        g_theta = theta_grad_re(glogZ_theta, data, state_space, R_all, E_all,
-          sigsq, alpha)
-        g_alpha = alpha_grad_re(glogZ_alpha, E_all, R_all)
-        g_sigsq = sigsq_grad_re(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom,
-          R_all, gvec)
-        
-        phi = phi + learn_rate*g_phi
-        phi[:,1] = np.maximum(phi[:,1], 0.01)
-        theta = theta + learn_rate*g_theta
-        alpha = alpha + learn_rate*g_alpha
-        sigsq = np.maximum(sigsq + learn_rate*g_sigsq, 0.01)
-        
-        learn_rate *= 0.99
-    pass
+    for _ in range(reps):
+      for n in range(N):
+          data = np.array(traj_data[n]) # m x 2 x Ti
+          R_all, E_all = RE_all(theta, data, TP, state_space, m)
+          normals = np.array([np.random.multivariate_normal(np.zeros(Ti),
+            np.eye(Ti), B) for i in range(m)])
+          meanvec, denom, gvec, gnorm = grad_terms_re(normals,
+            phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m)
+          logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals,
+            meanvec, denom, impa, theta, data, M, TP, R_all, E_all, action_space)
+          
+          lp = logp_re(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all,
+            logZvec, meanvec).mean(axis=1).sum()
+          lq = logq_re(Ti, denom).mean(axis=1).sum()
+          print(lp - lq)
+          #-2544
+          #-74553.34167368022
+          #-224548.54362581347
+              
+          g_phi = phi_grad_re(phi, m, Ti, normals, denom, sigsq, glogZ_phi)
+          g_theta = theta_grad_re(glogZ_theta, data, state_space, R_all, E_all,
+            sigsq, alpha)
+          g_alpha = alpha_grad_re(glogZ_alpha, E_all, R_all)
+          g_sigsq = sigsq_grad_re(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom,
+            R_all, gvec)
+          
+          phi = phi + learn_rate*g_phi
+          phi[:,1] = np.maximum(phi[:,1], 0.01)
+          theta = theta + learn_rate*g_theta
+          alpha = alpha + learn_rate*g_alpha
+          sigsq = np.maximum(sigsq + learn_rate*g_sigsq, 0.01)
+          
+          learn_rate *= 0.99
+    return phi, theta, alpha, sigsq
+
+phi_star, theta_star, alpha_star, sigsq_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 1)
 
 #theta = np.array([4, 4, -6, -6, 0.1])
 #sns.heatmap(lin_rew_func(theta, state_space))
@@ -530,6 +538,13 @@ def sigsq_grad_re(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all,
     result = -glogZ_sigsq + x[:,None] + y - z + w - q_grad[:,None]
     return np.mean(result, axis=1)
 
+def log_mean_exp(tensor):
+    K = np.max(tensor, axis=2)
+    expo = np.exp(tensor - K[:,:,None,:]) #getting ZEROS and INFs
+    # USE LOG SUM EXP TRICK
+    # may need K to be m x B x Ti; same shape as lvec
+    return np.log(np.mean(expo,axis=2)) + K
+
 def logZ_re(normals, meanvec, denom, impa, theta, data, M, TP,
             R_all, E_all, action_space):
     reward_est = lin_rew_func(theta, state_space)
@@ -545,10 +560,10 @@ def logZ_re(normals, meanvec, denom, impa, theta, data, M, TP,
 
     volA = len(action_space) # m x N x Ti 
     bterm = np.einsum('ijk,ilk->ijlk', meanvec, R_Z)
-    K = np.max(bterm)
-    expo = np.exp(bterm - K) #getting ZEROS and INFs
+    #K = np.max(bterm)
+    #expo = np.exp(bterm - K) #getting ZEROS and INFs
     # USE LOG SUM EXP TRICK
-    lvec = np.log(volA*np.mean(expo,axis=2)) + K
+    lvec = np.log(volA) + log_mean_exp(bterm)#+ np.log(np.mean(expo,axis=2)) + K
     logZvec = lvec.sum(axis=2)
 
     gradR = grad_lin_rew(data, state_space)
@@ -585,7 +600,9 @@ def theta_grad_re(glogZ_theta, data, state_space, R_all, E_all, sigsq, alpha):
     result = -glogZ_theta + np.einsum('ijk,ik->ij', gradR, X)[:,None,:]
     return np.sum(np.mean(result, axis=1), axis=0)
 
-
+def total_reward(reps):
+    episode(s,T,policy,rewards,step_func,a=-1)
+    pass
 
 
 
