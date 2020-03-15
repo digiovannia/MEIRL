@@ -355,6 +355,38 @@ def make_data(Q, alphas, sigsqs, reward_str, N, Ti):
     # second is m
     return trajectories 
 
+def locally_opt(Q_star, alpha, sigsq):
+    '''
+    Given optimal Q* and some "state of expertise",
+    returns a stochastic policy for an agent whose
+    beta is ideal centered around that state.
+
+    high beta = high expertise
+
+    CHANGE THIS
+    '''
+    beta = beta_func(alpha, sigsq)
+    policy = softmax(Q_star, beta, 2)
+    det_pol = np.argmax(policy, axis=2)
+    return policy, det_pol
+
+def make_data_myopic(Q, alphas, sigsqs, reward_str, N, Ti):
+    '''
+    Creates N trajectories each for local experts, given Q,
+    alphas, sigsqs, rewards (which may be "true" or
+    based on current guesses!)
+    '''
+    policies = [locally_opt(Q, alphas[i],
+                            sigsqs[i])[0] for i in range(m)]
+    trajectories = [
+        [synthetic_traj(reward_str, policies[i], Ti, state_space,
+                        action_space, init_state_sample)[:2] for i in range(m)]
+        for _ in range(N)
+    ]
+    # first index is N
+    # second is m
+    return trajectories 
+
 def eta_mat(data):
     arr = np.array([abs(data[:,0,:] // 6 - 1),
                     abs(data[:,0,:] % 6 - 1),
@@ -425,11 +457,10 @@ def y_t_SGD(phi, phi_m, theta, theta_m, alpha, alpha_m, sigsq, sigsq_m, t):
 
 def y_t_nest(phi, phi_m, theta, theta_m, alpha, alpha_m, sigsq, sigsq_m, t):
     const = (t-1)/(t+2)
-    phi += const*(phi - phi_m)
-    theta += const*(theta - theta_m)
-    alpha += const*(alpha - alpha_m)
-    sigsq += const*(sigsq - sigsq_m)
-    return phi, theta, alpha, sigsq
+    return (phi - const*(phi - phi_m),
+            theta - const*(theta - theta_m),
+            alpha - const*(alpha - alpha_m),
+            sigsq - const*(sigsq - sigsq_m))
 
 def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, y_t, update):
@@ -648,8 +679,9 @@ np.random.seed(1)
 phi = np.random.rand(m,2)
 alpha = np.random.normal(size=(m,p))
 sigsq = np.random.rand(m)
-theta = np.random.normal(size=d)
-
+#theta = np.random.normal(size=d)
+theta = np.array([0, 0, 0, 0, 0]) #prob a good baseline, complete ignorance of
+# rewards
 
 traj_data = make_data(Q, ex_alphas, ex_sigsqs, rewards, N, Ti)
 data = np.array(traj_data[0]) # for testing
@@ -664,8 +696,6 @@ B = 100 # number of betas sampled for expectation
 phi_star, theta_star, alpha_star, sigsq_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 20, y_t_nest, SGD)
 phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 50, y_t_nest, SGD)
-phi_star_3, theta_star_3, alpha_star_3, sigsq_star_3 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 50, y_t_nest, SGD)
 # The above is REALLY CLOSE!!!
 # wait nvm seems sensitive to init...
