@@ -249,12 +249,12 @@ np.random.seed(1)
 init_det_policy = np.random.choice([0,1,2,3], size=(D,D))
 init_policy = stoch_policy(init_det_policy, action_space)
 init_Q = np.random.rand(D,D,4)
-policy, Q = Qlearn(0.5, 0.8, 0.1, 10000, 20, state_space,
+opt_policy, Q = Qlearn(0.5, 0.8, 0.1, 10000, 20, state_space,
           action_space, rewards, init_policy, init_Q)
           # This seems to converge robustly to optimal policy,
           # although Q values have some variance in states where
           # it doesn't really matter
-visualize_policy(rewards, policy)
+visualize_policy(rewards, opt_policy)
 pol1 = locally_opt(Q, alpha1, sigsq1)[0]
 pol2 = locally_opt(Q, alpha2, sigsq2)[0]
 pol3 = locally_opt(Q, alpha3, sigsq3)[0]
@@ -449,7 +449,7 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
           
           lp = logp_re(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all,
             logZvec, meanvec).mean(axis=1).sum()
-          lq = logq_re(Ti, denom).mean(axis=1).sum()
+          lq = logq_re(Ti, denom, normals).mean(axis=1).sum()
           elbo.append(lp - lq)
           #print(lp - lq)
               
@@ -470,19 +470,6 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
     plt.plot(elbo)
     return phi, theta, alpha, sigsq
 
-phi_star, theta_star, alpha_star, sigsq_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 20)
-phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 50)
-phi_star_3, theta_star_3, alpha_star_3, sigsq_star_3 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 50)
-# The above is REALLY CLOSE!!!
-
-theta = np.array([4, 4, -6, -6, 0.1])
-sns.heatmap(lin_rew_func(theta, state_space))
-
-normals = np.array([np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), B) for i in range(m)])
-
 def grad_terms_re(normals, phi, alpha, sigsq, theta, data, R_all,
              E_all, Ti, m):
     '''
@@ -502,7 +489,7 @@ def logp_re(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all, logZvec,
     p2 = np.einsum('ijk,ik->ij', meanvec, R_all) - logZvec + np.sum(logT, axis=1)[:,None]
     return p1 + p2
 
-def logq_re(Ti, denom):
+def logq_re(Ti, denom, normals):
     epsnorm = np.einsum('ijk,ijk->ij', normals, normals)
     return -Ti/2*np.log(2*np.pi*denom)[:,None] - epsnorm/2
 
@@ -623,7 +610,16 @@ def total_reward(reps, policy, T, state_space, rewards):
     return reward_list
 
 
+phi_star, theta_star, alpha_star, sigsq_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 20)
+phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 50)
+phi_star_3, theta_star_3, alpha_star_3, sigsq_star_3 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 50)
+# The above is REALLY CLOSE!!!
 
+theta = np.array([4, 4, -6, -6, 0.1])
+sns.heatmap(lin_rew_func(theta, state_space))
 
 
 
@@ -721,8 +717,8 @@ def grad_check_phi_re(phi, alpha, sigsq, theta, data, Ti,
     lp_r = logp_re(state_space, Ti, sigsq, gnorm_r, data, TP, m, normals, R_all,
       logZvec_r, meanvec_r)
     
-    lq_l = logq_re(Ti, denom_l)
-    lq_r = logq_re(Ti, denom_r)
+    lq_l = logq_re(Ti, denom_l, normals)
+    lq_r = logq_re(Ti, denom_r, normals)
 
     n_t_g = (lp_l - lq_l - lp_r + lq_r)/(2*epsilon)
     change = n_t_g.mean(axis=1)
@@ -762,7 +758,7 @@ def grad_check_alpha_re(phi, alpha, sigsq, theta, data, Ti,
     lp_r = logp_re(state_space, Ti, sigsq, gnorm_r, data, TP, m, normals, R_all,
       logZvec_r, meanvec_r)
     
-    lq_l = logq_re(Ti, denom)
+    lq_l = logq_re(Ti, denom, normals)
     lq_r = lq_l
 
     n_t_g = (lp_l - lq_l - lp_r + lq_r)/(2*epsilon)
@@ -804,8 +800,8 @@ def grad_check_sigsq_re(phi, alpha, sigsq, theta, data, Ti,
     lp_r = logp_re(state_space, Ti, right, gnorm_r, data, TP, m, normals, R_all,
       logZvec_r, meanvec_r)
     
-    lq_l = logq_re(Ti, denom_l)
-    lq_r = logq_re(Ti, denom_r)
+    lq_l = logq_re(Ti, denom_l, normals)
+    lq_r = logq_re(Ti, denom_r, normals)
 
     n_t_g = (lp_l - lq_l - lp_r + lq_r)/(2*epsilon)
     change = n_t_g.mean(axis=1)
@@ -852,7 +848,7 @@ def grad_check_theta_re(phi, alpha, sigsq, theta, data, Ti,
     lp_r = logp_re(state_space, Ti, sigsq, gnorm_r, data, TP, m, normals, R_all_r,
       logZvec_r, meanvec_r)
     
-    lq_l = logq_re(Ti, denom)
+    lq_l = logq_re(Ti, denom, normals)
     lq_r = lq_l
 
     n_t_g = (lp_l - lq_l - lp_r + lq_r)/(2*epsilon)
