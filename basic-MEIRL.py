@@ -314,22 +314,6 @@ def init_state_sample(state_space):
     s = state_space[np.random.choice(len(state_space))]
     return s
 
-def Q_est(theta_h, gam, T, state_space,
-          action_space, init_policy, init_Q, Qlearn=False,
-          tol=0.0001, rate=0.5, eps=0.05, K=10000):
-    '''
-    Based on an estimate of theta, estimates Q by doing MCES or
-    Q-learning with respect to reward induced by theta.
-    '''
-    reward_str = lin_rew_func(theta_h, state_space)
-    if Qlearn:
-        Q_h = Qlearn(rate, gam, eps, K, T, state_space,
-          action_space, reward_str, init_policy, init_Q)[1]
-    else:
-        Q_h = MCES(gam, tol, T, state_space, action_space,
-                   reward_str, init_policy, init_Q)[1]
-    return rewards, Q_h
-
 def synthetic_traj(rewards, policy, Ti, state_space, action_space, init_state_sample):
     '''
     Generate a fake trajectory based on given
@@ -458,7 +442,7 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
         meanvec, denom, gvec, gnorm = grad_terms_re(normals,
           phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m)
         logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals,
-          meanvec, denom, impa, theta, data, M, TP, action_space)
+          meanvec, denom, impa, theta, data, M, TP, R_all, E_all, action_space)
         
         lp = logp_re(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all,
           logZvec, meanvec).mean(axis=1).sum()
@@ -546,7 +530,8 @@ def sigsq_grad_re(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all,
     result = -glogZ_sigsq + x[:,None] + y - z + w - q_grad[:,None]
     return np.mean(result, axis=1)
 
-def logZ_re(normals, meanvec, denom, impa, theta, data, M, TP, action_space):
+def logZ_re(normals, meanvec, denom, impa, theta, data, M, TP,
+            R_all, E_all, action_space):
     reward_est = lin_rew_func(theta, state_space)
     R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
                       imp_samp_data(data, impa, j, m, Ti).astype(int),
@@ -597,7 +582,7 @@ def theta_grad_re(glogZ_theta, data, state_space, R_all, E_all, sigsq, alpha):
     '''
     gradR = grad_lin_rew(data, state_space)
     X = sigsq[:,None]*R_all + np.einsum('ij,ijk->ik', alpha, E_all)
-    result = -glogZ + np.einsum('ijk,ik->ij', gradR, X)[:,None,:]
+    result = -glogZ_theta + np.einsum('ijk,ik->ij', gradR, X)[:,None,:]
     return np.sum(np.mean(result, axis=1), axis=0)
 
 
@@ -679,7 +664,7 @@ def grad_check_phi_re(phi, alpha, sigsq, theta, data, Ti,
       np.eye(Ti), B) for i in range(m)])
     meanvec, denom, gvec, gnorm = grad_terms_re(normals,
       phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m)
-    logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals, meanvec, denom, impa, theta, data, M, TP,
+    logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals, meanvec, denom, impa, theta, data, M, TP, R_all, E_all,
                     action_space)
     a_p_g = phi_grad_re(phi, m, Ti, normals, denom, sigsq, glogZ_phi)
 
@@ -692,9 +677,9 @@ def grad_check_phi_re(phi, alpha, sigsq, theta, data, Ti,
     meanvec_r, denom_r, gvec_r, gnorm_r = grad_terms_re(normals,
       right, alpha, sigsq, theta, data, R_all, E_all, Ti, m)
     logZvec_l, glogZ_theta_l, glogZ_alpha_l, glogZ_sigsq_l, glogZ_phi_l = logZ_re(normals,
-      meanvec_l, denom_l, impa, theta, data, M, TP, action_space)
+      meanvec_l, denom_l, impa, theta, data, M, TP, R_all, E_all, action_space)
     logZvec_r, glogZ_theta_r, glogZ_alpha_r, glogZ_sigsq_r, glogZ_phi_r = logZ_re(normals,
-      meanvec_r, denom_r, impa, theta, data, M, TP, action_space)
+      meanvec_r, denom_r, impa, theta, data, M, TP, R_all, E_all, action_space)
 
     lp_l = logp_re(state_space, Ti, sigsq, gnorm_l, data, TP, m, normals, R_all,
       logZvec_l, meanvec_l)
@@ -720,7 +705,7 @@ def grad_check_alpha_re(phi, alpha, sigsq, theta, data, Ti,
     meanvec, denom, gvec, gnorm = grad_terms_re(normals,
       phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m)
 
-    logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals, meanvec, denom, impa, theta, data, M, TP,
+    logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals, meanvec, denom, impa, theta, data, M, TP, R_all, E_all,
                     action_space)
     a_a_g = alpha_grad_re(glogZ_alpha, E_all, R_all)
 
@@ -733,9 +718,9 @@ def grad_check_alpha_re(phi, alpha, sigsq, theta, data, Ti,
     meanvec_r, denom_r, gvec_r, gnorm_r = grad_terms_re(normals,
       phi, right, sigsq, theta, data, R_all, E_all, Ti, m)
     logZvec_l, glogZ_theta_l, glogZ_alpha_l, glogZ_sigsq_l, glogZ_phi_l = logZ_re(normals,
-      meanvec_l, denom_l, impa, theta, data, M, TP, action_space)
+      meanvec_l, denom_l, impa, theta, data, M, TP, R_all, E_all, action_space)
     logZvec_r, glogZ_theta_r, glogZ_alpha_r, glogZ_sigsq_r, glogZ_phi_r = logZ_re(normals,
-      meanvec_r, denom_r, impa, theta, data, M, TP, action_space)
+      meanvec_r, denom_r, impa, theta, data, M, TP, R_all, E_all, action_space)
 
     lp_l = logp_re(state_space, Ti, sigsq, gnorm_l, data, TP, m, normals, R_all,
       logZvec_l, meanvec_l)
@@ -762,7 +747,7 @@ def grad_check_sigsq_re(phi, alpha, sigsq, theta, data, Ti,
     meanvec, denom, gvec, gnorm = grad_terms_re(normals,
       phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m)
     logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals, meanvec, denom, impa, theta, data, M, TP,
-                    action_space)
+                    R_all, E_all, action_space)
     a_s_g = sigsq_grad_re(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all,
                   gvec)
 
@@ -775,9 +760,9 @@ def grad_check_sigsq_re(phi, alpha, sigsq, theta, data, Ti,
     meanvec_r, denom_r, gvec_r, gnorm_r = grad_terms_re(normals,
       phi, alpha, right, theta, data, R_all, E_all, Ti, m)
     logZvec_l, glogZ_theta_l, glogZ_alpha_l, glogZ_sigsq_l, glogZ_phi_l = logZ_re(normals,
-      meanvec_l, denom_l, impa, theta, data, M, TP, action_space)
+      meanvec_l, denom_l, impa, theta, data, M, TP, R_all, E_all, action_space)
     logZvec_r, glogZ_theta_r, glogZ_alpha_r, glogZ_sigsq_r, glogZ_phi_r = logZ_re(normals,
-      meanvec_r, denom_r, impa, theta, data, M, TP, action_space)
+      meanvec_r, denom_r, impa, theta, data, M, TP, R_all, E_all, action_space)
 
     lp_l = logp_re(state_space, Ti, left, gnorm_l, data, TP, m, normals, R_all,
       logZvec_l, meanvec_l)
@@ -807,9 +792,9 @@ def grad_check_theta_re(phi, alpha, sigsq, theta, data, Ti,
     meanvec, denom, gvec, gnorm = grad_terms_re(normals,
       phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m)
 
-    logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals, meanvec, denom, impa, theta, data, M, TP,
+    logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals, meanvec, denom, impa, theta, data, M, TP, R_all, E_all,
                     action_space)
-    a_t_g = theta_grad_re(glogZ, data, state_space, R_all, E_all, sigsq, alpha)
+    a_t_g = theta_grad_re(glogZ_theta, data, state_space, R_all, E_all, sigsq, alpha)
 
 
     left = theta.copy()
@@ -822,8 +807,10 @@ def grad_check_theta_re(phi, alpha, sigsq, theta, data, Ti,
       phi, alpha, sigsq, left, data, R_all_l, E_all_l, Ti, m)
     meanvec_r, denom_r, gvec_r, gnorm_r = grad_terms_re(normals,
       phi, alpha, sigsq, right, data, R_all_r, E_all_r, Ti, m)
-    logZvec_l, glogZ_theta_l, glogZ_alpha_l, glogZ_sigsq_l, glogZ_phi_l = logZ_re(normals, meanvec_l, denom_l, impa, left, data, M, TP, action_space)
-    logZvec_r, glogZ_theta_r, glogZ_alpha_r, glogZ_sigsq_r, glogZ_phi_r = logZ_re(normals, meanvec_r, denom_r, impa, right, data, M, TP, action_space)
+    logZvec_l, glogZ_theta_l, glogZ_alpha_l, glogZ_sigsq_l, glogZ_phi_l = logZ_re(normals,
+      meanvec_l, denom_l, impa, left, data, M, TP, R_all_l, E_all_l, action_space)
+    logZvec_r, glogZ_theta_r, glogZ_alpha_r, glogZ_sigsq_r, glogZ_phi_r = logZ_re(normals,
+      meanvec_r, denom_r, impa, right, data, M, TP, R_all_r, E_all_r, action_space)
 
     lp_l = logp_re(state_space, Ti, sigsq, gnorm_l, data, TP, m, normals, R_all_l,
       logZvec_l, meanvec_l)
