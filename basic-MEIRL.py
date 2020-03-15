@@ -474,6 +474,9 @@ phi_star, theta_star, alpha_star, sigsq_star = AEVB(theta, alpha, sigsq, phi, tr
          action_space, B, m, M, Ti, learn_rate, 20)
 phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 50)
+phi_star_3, theta_star_3, alpha_star_3, sigsq_star_3 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 50)
+# The above is REALLY CLOSE!!!
 
 theta = np.array([4, 4, -6, -6, 0.1])
 sns.heatmap(lin_rew_func(theta, state_space))
