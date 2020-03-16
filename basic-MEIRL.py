@@ -490,7 +490,7 @@ def y_t_nest(phi, phi_m, theta, theta_m, alpha, alpha_m, sigsq, sigsq_m, t):
             sigsq - const*(sigsq - sigsq_m))
 
 def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, y_t, update):
+         action_space, B, m, M, Ti, learn_rate, reps, y_t, update, plot=True):
     '''
     Need the expert trajectories
 
@@ -540,7 +540,8 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
             
             learn_rate *= 0.99
             t += 1
-    plt.plot(elbo)
+    if plot:
+        plt.plot(elbo)
     return phi, theta, alpha, sigsq
 
 def grad_terms_re(normals, phi, alpha, sigsq, theta, data, R_all,
@@ -697,8 +698,40 @@ def evaluate(reps, policy, T, state_space, rewards, theta_est, init_policy,
           action_space, reward_est, init_policy, init_Q)[0]
     true_rew = cumulative_reward(reps, policy, T, state_space, rewards)
     est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
-    plt.plot(np.cumsum(true_rew))
-    plt.plot(np.cumsum(est_rew))
+    plt.plot(np.cumsum(true_rew), color='b')
+    plt.plot(np.cumsum(est_rew), color='r')
+    
+def rep_evaluate(reps, policy, T, state_space, rewards, init_policy,
+             init_Q, J):
+    true_rew = cumulative_reward(reps, policy, T, state_space, rewards)
+    plt.plot(np.cumsum(true_rew), color='b') 
+    for _ in range(J):
+        theta_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 20, y_t_nest, SGD, plot=False)[1]
+        reward_est = lin_rew_func(theta_star, state_space)
+        est_policy = Qlearn(0.5, 0.8, 0.1, 10000, 20, state_space,
+          action_space, reward_est, init_policy, init_Q)[0]
+        est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
+        plt.plot(np.cumsum(est_rew), color='r')
+        
+def evaluate_vs_random(reps, policy, T, state_space, rewards, init_policy,
+             init_Q, J):
+    true_rew = cumulative_reward(reps, policy, T, state_space, rewards)
+    plt.plot(np.cumsum(true_rew), color='b') 
+    for _ in range(J):
+        theta_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 20, y_t_nest, SGD, plot=False)[1]
+        reward_est = lin_rew_func(theta_star, state_space)
+        est_policy = Qlearn(0.5, 0.8, 0.1, 10000, 20, state_space,
+          action_space, reward_est, init_policy, init_Q)[0]
+        est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
+        plt.plot(np.cumsum(est_rew), color='r')
+        
+        reward_est = lin_rew_func(np.random.normal(size=d), state_space)
+        est_policy = Qlearn(0.5, 0.8, 0.1, 10000, 20, state_space,
+          action_space, reward_est, init_policy, init_Q)[0]
+        est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
+        plt.plot(np.cumsum(est_rew), color='g')
     
 # Initializations
 np.random.seed(1)
