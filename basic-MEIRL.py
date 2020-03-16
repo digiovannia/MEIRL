@@ -325,7 +325,7 @@ def myo_policy(beta, s, TP, rewards):
     expect_rew = TP[state_index(s)].dot(np.ravel(rewards))
     return softmax(expect_rew, beta)
 
-def synthetic_traj_myo(rewards, alpha, i, Ti, state_space, action_space,
+def synthetic_traj_myo(rewards, alpha, sigsq, i, Ti, state_space, action_space,
                        init_state_sample, TP):
     '''
     Generate a fake trajectory based on given
@@ -342,30 +342,13 @@ def synthetic_traj_myo(rewards, alpha, i, Ti, state_space, action_space,
                TP, rewards))
     actions = [a]
     for _ in range(Ti-1):
-        s = grid_step(state_space[tuple(s)],a)
+        s = grid_step(s,a)
         states.append(s)
         beta = mu(s, alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
         a = np.random.choice(action_space, p = myo_policy(beta, s,
                TP, rewards))
         actions.append(a)
     return list(multi_state_index(np.array(states))), actions
-    
-    '''
-    states = [s]
-    if a < 0:
-        a = np.random.choice(action_space, p=policy[tuple(s)])
-    actions = [a]
-    reward_list = [0]
-    for _ in range(T-1):
-        s = step_func(s,a)
-        states.append(s)
-        r = rewards[tuple(s)]
-        reward_list.append(r)
-        a = np.random.choice(action_space, p=policy[tuple(s)])
-        actions.append(a)
-    reward_list.append(rewards[tuple(s)])
-    return np.array(states), actions, reward_list
-    '''
 
 def see_trajectory(reward_map, state_seq):
     '''
@@ -382,6 +365,8 @@ def make_data(Q, alphas, sigsqs, reward_str, N, Ti):
     Creates N trajectories each for local experts, given Q,
     alphas, sigsqs, rewards (which may be "true" or
     based on current guesses!)
+    
+    OLD
     '''
     policies = [locally_opt(Q, alphas[i],
                             sigsqs[i])[0] for i in range(m)]
@@ -394,17 +379,16 @@ def make_data(Q, alphas, sigsqs, reward_str, N, Ti):
     # second is m
     return trajectories 
 
-def make_data_myopic(Q, alphas, sigsqs, reward_str, N, Ti):
+def make_data_myopic(alpha, sigsqs, reward_str, N, Ti, state_space, action_space,
+                     init_state_sample, TP, m):
     '''
     Creates N trajectories each for local experts, given Q,
     alphas, sigsqs, rewards (which may be "true" or
     based on current guesses!)
     '''
-    policies = [locally_opt(Q, alphas[i],
-                            sigsqs[i])[0] for i in range(m)]
     trajectories = [
-        [synthetic_traj(reward_str, policies[i], Ti, state_space,
-                        action_space, init_state_sample)[:2] for i in range(m)]
+        [synthetic_traj_myo(reward_str, alpha, sigsq, i, Ti, state_space, action_space,
+                       init_state_sample, TP) for i in range(m)]
         for _ in range(N)
     ]
     # first index is N
@@ -707,7 +691,8 @@ sigsq = np.random.rand(m)
 theta = np.array([0, 0, 0, 0, 0]) #prob a good baseline, complete ignorance of
 # rewards
 
-traj_data = make_data(Q, ex_alphas, ex_sigsqs, rewards, N, Ti)
+traj_data = make_data_myopic(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
+                     init_state_sample, TP, m)
 data = np.array(traj_data[0]) # for testing
 # first index is n=1 to N
 # second index is expert
