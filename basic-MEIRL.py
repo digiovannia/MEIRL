@@ -18,7 +18,8 @@ np.random.seed(1)
 # Global params
 D=6
 MOVE_NOISE = 0.05
-INTERCEPT = 1
+INTERCEPT_ETA = 10
+INTERCEPT_REW = 1
 WEIGHT = 2
 M = 20 # number of actions used for importance sampling
 N = 10 # number of trajectories per expert
@@ -36,6 +37,8 @@ rewards[D-1,D-1] = 5
 rewards[0,D-1] = -5
 rewards[D-1,0] = -5
 '''
+true_theta = np.array([4, 4, -6, -6, 0.1])
+rewards = lin_rew_func(true_theta, state_space)
 #sns.heatmap(rewards)
 
 def manh_dist(p1, p2):
@@ -175,7 +178,7 @@ def Qlearn(rate, gam, eps, K, T, state_space, action_space,
 
 def eta(st):
     return np.array([abs(st[0]-1), abs(st[1]-1), abs(st[0]-4),
-                     abs(st[1]-4), INTERCEPT])
+                     abs(st[1]-4), INTERCEPT_ETA])
 
 def mu(s, alpha):
     return np.dot(eta(s), alpha)
@@ -222,13 +225,6 @@ def locally_opt(Q_star, alpha, sigsq):
     det_pol = np.argmax(policy, axis=2)
     return policy, det_pol
 
-def locally_myo(i, alpha, sigsq):
-    '''
-    '''
-    beta = beta_func(alpha[i], sigsq[i])
-    
-    pass
-
 
 '''
 Going to test on trajectories from Q* model rather than one-step,
@@ -247,10 +243,17 @@ p = alpha1.shape[0]
 d = 5
 m = 4
 
+'''
 sigsq1 = 25
 sigsq2 = 25
 sigsq3 = 25
 sigsq4 = 25
+'''
+
+sigsq1 = 2
+sigsq2 = 2
+sigsq3 = 2
+sigsq4 = 2
 
 ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4])
 ex_sigsqs = np.array([sigsq1, sigsq2, sigsq3, sigsq4])
@@ -265,10 +268,10 @@ opt_policy, Q = Qlearn(0.5, 0.8, 0.1, 10000, 20, state_space,
           # although Q values have some variance in states where
           # it doesn't really matter
 visualize_policy(rewards, opt_policy)
-pol1 = locally_opt(Q, alpha1, sigsq1)[0]
-pol2 = locally_opt(Q, alpha2, sigsq2)[0]
-pol3 = locally_opt(Q, alpha3, sigsq3)[0]
-pol4 = locally_opt(Q, alpha4, sigsq4)[0]
+#pol1 = locally_opt(Q, alpha1, sigsq1)[0]
+#pol2 = locally_opt(Q, alpha2, sigsq2)[0]
+#pol3 = locally_opt(Q, alpha3, sigsq3)[0]
+#pol4 = locally_opt(Q, alpha4, sigsq4)[0]
 
 
 
@@ -295,13 +298,13 @@ def psi_all_states(state_space):
                     arr_radial(state_space,(D-1,D-1)),
                     arr_radial(state_space, (0,D-1)),
                     arr_radial(state_space, (D-1,0)),
-                     INTERCEPT*np.ones(len(state_space))])
+                     INTERCEPT_REW*np.ones(len(state_space))])
     '''
     return np.array([arr_radial(state_space, (0,2)),
                     arr_radial(state_space,(D-2,D-1)),
                     arr_radial(state_space, (3,D-2)),
                     arr_radial(state_space, (D-1,0)),
-                     INTERCEPT*np.ones(len(state_space))])
+                     INTERCEPT_REW*np.ones(len(state_space))])
 
 def lin_rew_func(theta, state_space):
     '''
@@ -416,7 +419,7 @@ def eta_mat(data):
                     abs(data[:,0,:] % 6 - 1),
                     abs(data[:,0,:] // 6 - 4),
                     abs(data[:,0,:] % 6 - 4),
-                    INTERCEPT*np.ones(data[:,0,:].shape)])
+                    INTERCEPT_ETA*np.ones(data[:,0,:].shape)])
 
     return np.swapaxes(arr, 0, 1)
 
@@ -720,14 +723,21 @@ B = 100 # number of betas sampled for expectation
 
 phi_star, theta_star, alpha_star, sigsq_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 20, y_t_nest, SGD)
+# this works p well, when true sigsq is set to 2 and the trajectories come
+# from the truly specified model
 phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 50, y_t_nest, SGD)
-# The above is REALLY CLOSE!!!
-# wait nvm seems sensitive to init...
 
-true_theta = np.array([4, 4, -6, -6, 0.1])
-sns.heatmap(lin_rew_func(true_theta, state_space))
+evaluate(10, opt_policy, 50, state_space, rewards, theta, init_policy,
+             init_Q)
 
+evaluate(10, opt_policy, 50, state_space, rewards, theta_star, init_policy,
+             init_Q)
+
+#true_theta = np.array([4, 4, -6, -6, 0.1])
+#sns.heatmap(lin_rew_func(true_theta, state_space))
+
+# Maybe massive sigma (used to be 25!) was just drowning out the signal...
 
 
 
