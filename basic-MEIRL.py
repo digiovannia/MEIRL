@@ -16,7 +16,7 @@ Actions: 0 = up, 1 = right, 2 = down, 3 = left
 np.random.seed(1)
 
 # Global params
-D=6
+D=8#6
 MOVE_NOISE = 0.05
 INTERCEPT_ETA = 10
 INTERCEPT_REW = 1
@@ -177,8 +177,8 @@ def Qlearn(rate, gam, eps, K, T, state_space, action_space,
     return policy, Q
 
 def eta(st):
-    return np.array([abs(st[0]-1), abs(st[1]-1), abs(st[0]-4),
-                     abs(st[1]-4), INTERCEPT_ETA])
+    return np.array([abs(st[0]-1), abs(st[1]-1), abs(st[0]-(D-2)),
+                     abs(st[1]-(D-2)), INTERCEPT_ETA])
 
 def mu(s, alpha):
     return np.dot(eta(s), alpha)
@@ -415,10 +415,10 @@ def make_data_myopic(alpha, sigsqs, reward_str, N, Ti, state_space, action_space
     return trajectories 
 
 def eta_mat(data):
-    arr = np.array([abs(data[:,0,:] // 6 - 1),
-                    abs(data[:,0,:] % 6 - 1),
-                    abs(data[:,0,:] // 6 - 4),
-                    abs(data[:,0,:] % 6 - 4),
+    arr = np.array([abs(data[:,0,:] // D - 1),
+                    abs(data[:,0,:] % D - 1),
+                    abs(data[:,0,:] // D - (D-2)),
+                    abs(data[:,0,:] % D - (D-2)),
                     INTERCEPT_ETA*np.ones(data[:,0,:].shape)])
 
     return np.swapaxes(arr, 0, 1)
