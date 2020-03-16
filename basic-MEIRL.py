@@ -18,7 +18,7 @@ np.random.seed(1)
 # Global params
 D=6
 MOVE_NOISE = 0.05
-INTERCEPT = 10
+INTERCEPT = 1
 WEIGHT = 2
 M = 20 # number of actions used for importance sampling
 N = 10 # number of trajectories per expert
@@ -29,11 +29,13 @@ learn_rate = 0.0001
 # Making gridworld
 state_space = np.array([(i,j) for i in range(D) for j in range(D)])
 action_space = list(range(4))
+'''
 rewards = np.ones((D,D))
 rewards[0,0] = 5
 rewards[D-1,D-1] = 5
 rewards[0,D-1] = -5
 rewards[D-1,0] = -5
+'''
 #sns.heatmap(rewards)
 
 def manh_dist(p1, p2):
@@ -276,14 +278,28 @@ pol4 = locally_opt(Q, alpha4, sigsq4)[0]
 
 ###### Phase 2 ######
 
+'''
+CHANGED THE REWARD FUNC!
+
+may want to randomly generate a bunch of these
+'''
+
 def arr_radial(s, c):
-    return np.exp(-5*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
+    #return np.exp(-5*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
+    return np.exp(-2*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
 
 def psi_all_states(state_space):
     # d x D**2
+    '''
     return np.array([arr_radial(state_space, (0,0)),
                     arr_radial(state_space,(D-1,D-1)),
                     arr_radial(state_space, (0,D-1)),
+                    arr_radial(state_space, (D-1,0)),
+                     INTERCEPT*np.ones(len(state_space))])
+    '''
+    return np.array([arr_radial(state_space, (0,2)),
+                    arr_radial(state_space,(D-2,D-1)),
+                    arr_radial(state_space, (3,D-2)),
                     arr_radial(state_space, (D-1,0)),
                      INTERCEPT*np.ones(len(state_space))])
 
@@ -709,8 +725,8 @@ phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq,
 # The above is REALLY CLOSE!!!
 # wait nvm seems sensitive to init...
 
-theta = np.array([4, 4, -6, -6, 0.1])
-sns.heatmap(lin_rew_func(theta, state_space))
+true_theta = np.array([4, 4, -6, -6, 0.1])
+sns.heatmap(lin_rew_func(true_theta, state_space))
 
 
 
