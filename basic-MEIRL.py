@@ -689,6 +689,9 @@ def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
                         init_Q, J, B, m, M, Ti, learn_rate):
     true_rew = cumulative_reward(reps, policy, T, state_space, rewards)
     plt.plot(np.cumsum(true_rew), color='b') 
+    true_total = np.sum(true_rew)
+    AEVB_total = []
+    unif_total = []
     for _ in range(J):
         theta_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 5, y_t_nest, SGD, plot=False)[1]
@@ -697,6 +700,7 @@ def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
           action_space, reward_est, init_policy, init_Q)[0]
         est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='r')
+        AEVB_total.append(np.sum(est_rew))
         
         theta_star = MEIRL_unif(theta, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 5, y_t_nest_unif, SGD_unif)[0]
@@ -705,6 +709,8 @@ def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
           action_space, reward_est, init_policy, init_Q)[0]
         est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='g')
+        unif_total.append(np.sum(est_rew))
+    return true_total, AEVB_total, unif_total
     
 def logZ_unif(beta, impa, theta, data, M, TP, action_space):
     '''
@@ -899,11 +905,11 @@ Testing against constant-beta model
 theta_s, beta_s = MEIRL_unif(theta, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 50, y_t_nest_unif, SGD_unif)
 
-evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 50,
+true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 50,
                         state_space, action_space, rewards, init_policy,
                         init_Q, 10, B, m, M, Ti, learn_rate)
 
-# promising results when using N = 50 and reps = 3, but might
+# promising results when using N = 50 and reps = 5, but might
 # not replicate...
 
 
