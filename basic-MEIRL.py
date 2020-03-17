@@ -18,11 +18,13 @@ np.random.seed(1)
 # Global params
 D=8#6
 MOVE_NOISE = 0.05
-INTERCEPT_ETA = 10
+INTERCEPT_ETA = 15#10
 INTERCEPT_REW = 1
 WEIGHT = 2
+RESCALE = 1/6
+RESET = 20
 M = 20 # number of actions used for importance sampling
-N = 50 # number of trajectories per expert
+N = 20 # number of trajectories per expert
 Ti = 50 # length of trajectory
 B = 50#100 # number of betas/normals sampled for expectation
 learn_rate = 0.0001
@@ -229,7 +231,7 @@ may want to randomly generate a bunch of these
 
 def arr_radial(s, c):
     #return np.exp(-5*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
-    return np.exp(-2*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
+    return RESCALE*np.exp(-2*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
 
 def psi_all_states(state_space):
     # d x D**2
@@ -428,7 +430,8 @@ def y_t_nest(phi, phi_m, theta, theta_m, alpha, alpha_m, sigsq, sigsq_m, t):
             sigsq - const*(sigsq - sigsq_m))
 
 def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, y_t, update, plot=True):
+         action_space, B, m, M, Ti, learn_rate, reps, y_t, update,
+         plot=True):
     '''
     Need the expert trajectories
 
@@ -482,6 +485,99 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
     if plot:
         plt.plot(elbo)
     return phi, theta, alpha, sigsq
+
+def ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, reps, y_t, update,
+         plot=True):
+    '''
+    y_t is the function used to define modified iterate for Nesterov, if
+    applicable
+    
+    update is e.g. SGD or Adam
+    '''
+    impa = uniform_action_sample(action_space, M)
+    N = len(traj_data)
+    elbo = []
+    phi_m = np.zeros_like(phi)
+    theta_m = np.zeros_like(theta)
+    alpha_m = np.zeros_like(alpha)
+    sigsq_m = np.zeros_like(sigsq)
+    best = -np.inf
+    best_phi = phi_m.copy()
+    best_theta = theta_m.copy()
+    best_alpha = alpha_m.copy()
+    best_sigsq = sigsq_m.copy()
+    time_since_best = 0
+    t = 1
+    start_lr = learn_rate
+    # while error > eps:
+    for _ in range(reps):
+        permut = list(np.random.permutation(range(N)))
+        for n in permut:
+            time_since_best += 1
+            y_phi, y_theta, y_alpha, y_sigsq = y_t(phi, phi_m, theta,
+              theta_m, alpha, alpha_m, sigsq, sigsq_m, t)
+            data = np.array(traj_data[n]) # m x 2 x Ti
+            R_all, E_all = RE_all(y_theta, data, TP, state_space, m)
+            normals = np.array([np.random.multivariate_normal(np.zeros(Ti),
+              np.eye(Ti), B) for i in range(m)])
+            meanvec, denom, gvec, gnorm = grad_terms_re(normals,
+              y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
+            (logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq,
+              glogZ_phi) = logZ_re(normals, meanvec, denom, impa, y_theta,
+              data, M, TP, R_all, E_all, action_space)
+          
+            lp = logp_re(state_space, Ti, y_sigsq, gnorm, data, TP, m,
+              normals, R_all, logZvec, meanvec).mean(axis=1).sum()
+            lq = logq_re(Ti, denom, normals).mean(axis=1).sum()
+            elboval = lp - lq
+            elbo.append(elboval)
+            #print(lp - lq)
+              
+            g_phi = phi_grad_re(y_phi, m, Ti, normals, denom, y_sigsq,
+              glogZ_phi)
+            g_theta = theta_grad_re(glogZ_theta, data, state_space,
+              R_all, E_all, y_sigsq, y_alpha)
+            g_alpha = alpha_grad_re(glogZ_alpha, E_all, R_all)
+            g_sigsq = sigsq_grad_re(glogZ_sigsq, normals, Ti, y_sigsq,
+              gnorm, denom, R_all, gvec)
+          
+            phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
+            phi, theta, alpha, sigsq = update(y_phi, y_theta, y_alpha,
+              y_sigsq, g_phi, g_theta, g_alpha, g_sigsq, learn_rate)
+
+            if elboval > best:
+                best = elboval
+                best_phi = phi.copy()
+                best_theta = theta.copy()
+                best_alpha = alpha.copy()
+                best_sigsq = sigsq.copy()
+                time_since_best = 0
+            
+            learn_rate *= 0.99
+            t += 1
+            if time_since_best > RESET:
+                phi_m = np.zeros_like(phi)
+                theta_m = np.zeros_like(theta)
+                alpha_m = np.zeros_like(alpha)
+                sigsq_m = np.zeros_like(sigsq)
+                learn_rate = start_lr
+                phi += np.random.normal(scale=np.max(np.abs(phi))/2,
+                  size=phi.shape)
+                phi[:,1] = np.maximum(phi[:,1], 0.01)
+                theta += np.random.normal(scale=np.max(np.abs(theta))/2,
+                  size=theta.shape)
+                alpha += np.random.normal(scale=np.max(np.abs(alpha))/2,
+                  size=alpha.shape)
+                sigsq += np.random.normal(scale=np.max(sigsq)/2,
+                  size=sigsq.shape)
+                sigsq = np.maximum(sigsq, 0.01)
+                time_since_best = 0
+                #print('RESET')
+    if plot:
+        plt.plot(elbo)
+    return best_phi, best_theta, best_alpha, best_sigsq
+
 
 def grad_terms_re(normals, phi, alpha, sigsq, theta, data, R_all,
              E_all, Ti, m):
@@ -688,7 +784,7 @@ def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
     AEVB_total = []
     unif_total = []
     for _ in range(J):
-        theta_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+        theta_star = ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 5, y_t_nest, SGD, plot=False)[1]
         reward_est = lin_rew_func(theta_star, state_space)
         est_policy = Qlearn(0.5, 0.8, 0.1, 10000, 20, state_space,
@@ -864,8 +960,7 @@ alpha = np.random.normal(size=(m,p), scale=0.05)
 sigsq = np.random.rand(m)
 beta = np.random.rand(m)
 #theta = np.random.normal(size=d)
-theta = np.array([0, 0, 0, 0, 0]) #prob a good baseline, complete ignorance of
-# rewards
+theta = np.array([0, 0, 0, 0, 0]) 
 
 traj_data = make_data_myopic(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
                      init_state_sample, TP, m)
@@ -874,16 +969,12 @@ data = np.array(traj_data[0]) # for testing
 # second index is expert
 # third is states, actions
 
-M = 20 # number of actions used for importance sampling
-N = 20 # number of trajectories per expert
-B = 100 # number of betas sampled for expectation
-
 phi_star, theta_star, alpha_star, sigsq_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 3, y_t_nest, SGD)
 # this works p well, when true sigsq is set to 2 and the trajectories come
 # from the truly specified model
-phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 50, y_t_nest, SGD)
+phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 20, y_t_nest, SGD)
 
 evaluate(10, opt_policy, 50, state_space, rewards, theta, init_policy,
              init_Q)
@@ -891,10 +982,8 @@ evaluate(10, opt_policy, 50, state_space, rewards, theta, init_policy,
 evaluate(10, opt_policy, 50, state_space, rewards, theta_star, init_policy,
              init_Q)
 
-#true_theta = np.array([4, 4, -6, -6, 0.1])
+true_theta = np.array([4, 4, -6, -6, 0.1])
 #sns.heatmap(lin_rew_func(true_theta, state_space))
-
-# Maybe massive sigma (used to be 25!) was just drowning out the signal...
 
 '''
 Testing against constant-beta model
