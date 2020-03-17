@@ -923,8 +923,11 @@ true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform(theta, alpha, sigsq, phi, bet
 ## But! Still on average much better than uniform model:
 ## mean(AEVB_tot) = 1231.5
 ## mean(unif_tot) = 621.5
+# Another rep: no better than random...
 
-
+tr_tot, AE_tot, ra_tot = evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 50,
+                        state_space, action_space, rewards, init_policy,
+                        init_Q, 10, B, m, M, Ti, learn_rate)
 
 
 
