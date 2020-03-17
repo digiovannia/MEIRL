@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 '''
-A very simple dxd gridworld to test out multiple-experts IRL.
+A simple DxD gridworld to test out multiple-experts IRL.
 Agent can move in cardinal directions; moves in intended direction
-with prob 90%, else uniform direction. If moves in illegal
+with prob 1-MOVE_NOISE, else uniform direction. If moves in illegal
 direction, stays in place.
 
 Will find optimal Q values by Q-learning.
@@ -22,7 +22,7 @@ INTERCEPT_ETA = 10
 INTERCEPT_REW = 1
 WEIGHT = 2
 M = 20 # number of actions used for importance sampling
-N = 10 # number of trajectories per expert
+N = 50 # number of trajectories per expert
 Ti = 50 # length of trajectory
 B = 100 # number of betas/normals sampled for expectation
 learn_rate = 0.0001
@@ -459,7 +459,8 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
     t = 1
     # while error > eps:
     for _ in range(reps):
-        for n in range(N):
+        permut = list(np.random.permutation(range(N)))
+        for n in permut:
             y_phi, y_theta, y_alpha, y_sigsq = y_t(phi, phi_m, theta, theta_m,
               alpha, alpha_m, sigsq, sigsq_m, t)
             data = np.array(traj_data[n]) # m x 2 x Ti
@@ -690,7 +691,7 @@ def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
     plt.plot(np.cumsum(true_rew), color='b') 
     for _ in range(J):
         theta_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 20, y_t_nest, SGD, plot=False)[1]
+         action_space, B, m, M, Ti, learn_rate, 5, y_t_nest, SGD, plot=False)[1]
         reward_est = lin_rew_func(theta_star, state_space)
         est_policy = Qlearn(0.5, 0.8, 0.1, 10000, 20, state_space,
           action_space, reward_est, init_policy, init_Q)[0]
@@ -698,7 +699,7 @@ def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
         plt.plot(np.cumsum(est_rew), color='r')
         
         theta_star = MEIRL_unif(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 20, y_t_nest_unif, SGD_unif)[0]
+         action_space, B, m, M, Ti, learn_rate, 5, y_t_nest_unif, SGD_unif)[0]
         reward_est = lin_rew_func(np.random.normal(size=d), state_space)
         est_policy = Qlearn(0.5, 0.8, 0.1, 10000, 20, state_space,
           action_space, reward_est, init_policy, init_Q)[0]
@@ -784,7 +785,8 @@ def MEIRL_unif(theta, beta, traj_data, TP, state_space,
     t = 1
     # while error > eps:
     for _ in range(reps):
-        for n in range(N):
+        permut = list(np.random.permutation(range(N)))
+        for n in permut:
             y_theta, y_beta = y_t(theta, theta_m,
               beta, beta_m, t)
             data = np.array(traj_data[n]) # m x 2 x Ti
@@ -854,7 +856,7 @@ visualize_policy(rewards, opt_policy)
 #pol4 = locally_opt(Q, alpha4, sigsq4)[0]
 
 phi = np.random.rand(m,2)
-alpha = np.random.normal(size=(m,p))
+alpha = np.random.normal(size=(m,p), scale=0.05)
 sigsq = np.random.rand(m)
 beta = np.random.rand(m)
 #theta = np.random.normal(size=d)
@@ -873,7 +875,7 @@ N = 20 # number of trajectories per expert
 B = 100 # number of betas sampled for expectation
 
 phi_star, theta_star, alpha_star, sigsq_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 20, y_t_nest, SGD)
+         action_space, B, m, M, Ti, learn_rate, 3, y_t_nest, SGD)
 # this works p well, when true sigsq is set to 2 and the trajectories come
 # from the truly specified model
 phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
@@ -901,6 +903,8 @@ evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 50,
                         state_space, action_space, rewards, init_policy,
                         init_Q, 10, B, m, M, Ti, learn_rate)
 
+# promising results when using N = 50 and reps = 3, but might
+# not replicate...
 
 
 
