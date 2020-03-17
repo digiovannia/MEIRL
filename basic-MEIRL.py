@@ -24,19 +24,8 @@ WEIGHT = 2
 M = 20 # number of actions used for importance sampling
 N = 50 # number of trajectories per expert
 Ti = 50 # length of trajectory
-B = 100 # number of betas/normals sampled for expectation
+B = 50#100 # number of betas/normals sampled for expectation
 learn_rate = 0.0001
-
-# Making gridworld
-state_space = np.array([(i,j) for i in range(D) for j in range(D)])
-action_space = list(range(4))
-'''
-rewards = np.ones((D,D))
-rewards[0,0] = 5
-rewards[D-1,D-1] = 5
-rewards[0,D-1] = -5
-rewards[D-1,0] = -5
-'''
 
 def manh_dist(p1, p2):
     return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
@@ -279,11 +268,10 @@ def grad_lin_rew(data, state_space):
 
     Each column is E(s'|st,at)(psi(s')) where psi is
     feature
-
-    Looks correct!
     '''
     probs = TP[data[:,0], data[:,1]] # m x Ti x D**2
-    return np.swapaxes(probs.dot(psi_all_states(state_space).transpose()), 1, 2)
+    return np.swapaxes(probs.dot(psi_all_states(state_space).transpose()),
+                       1, 2)
 
 def init_state_sample(state_space):
     '''
@@ -822,6 +810,9 @@ np.random.seed(1)
 
 
 
+# Making gridworld
+state_space = np.array([(i,j) for i in range(D) for j in range(D)])
+action_space = list(range(4))
 TP = transition(state_space, action_space)
 true_theta = np.array([4, 4, -6, -6, 0.1])
 rewards = lin_rew_func(true_theta, state_space)
@@ -915,7 +906,7 @@ theta_s, beta_s = MEIRL_unif(theta, beta, traj_data, TP, state_space,
 true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 50,
                         state_space, action_space, rewards, init_policy,
                         init_Q, 10, B, m, M, Ti, learn_rate)
-                        # takes about 14 minutes to run, yikes
+                        # takes about 14 minutes to run on dell; 8 min on mac, yikes
 
 # promising results when using N = 50 and reps = 5, but might
 # not replicate...
@@ -925,9 +916,9 @@ true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform(theta, alpha, sigsq, phi, bet
 ## mean(unif_tot) = 621.5
 # Another rep: no better than random...
 
-tr_tot, AE_tot, ra_tot = evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 50,
+tr_tot, AE_tot, ra_tot = evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 20,
                         state_space, action_space, rewards, init_policy,
-                        init_Q, 10, B, m, M, Ti, learn_rate)
+                        init_Q, 30, B, m, M, Ti, learn_rate)
 
 
 
