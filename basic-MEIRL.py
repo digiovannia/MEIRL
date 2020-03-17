@@ -24,7 +24,7 @@ WEIGHT = 2
 M = 20 # number of actions used for importance sampling
 N = 10 # number of trajectories per expert
 Ti = 50 # length of trajectory
-B = 100 # number of betas sampled for expectation
+B = 100 # number of betas/normals sampled for expectation
 learn_rate = 0.0001
 
 # Making gridworld
@@ -37,9 +37,6 @@ rewards[D-1,D-1] = 5
 rewards[0,D-1] = -5
 rewards[D-1,0] = -5
 '''
-true_theta = np.array([4, 4, -6, -6, 0.1])
-rewards = lin_rew_func(true_theta, state_space)
-#sns.heatmap(rewards)
 
 def manh_dist(p1, p2):
     return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
@@ -83,8 +80,6 @@ def transition(state_space, action_space):
                             (y1 + action[1] >= D)):
                             TP[s,a,state_index((x2,y2))] += 1 - MOVE_NOISE
     return TP
-
-TP = transition(state_space, action_space)
 
 def grid_step(s, a):
     '''
@@ -230,50 +225,6 @@ def locally_opt(Q_star, alpha, sigsq):
 Going to test on trajectories from Q* model rather than one-step,
 will see how bad...
 '''
-
-# Misspecified reward bases?
-
-# Alpha vectors for the centers of the grid world
-# where each expert is closest to optimal.
-alpha1 = np.array([-WEIGHT, -WEIGHT, 0, 0, 1]) # (1,1)
-alpha2 = np.array([-WEIGHT, 0, 0, -WEIGHT, 1]) # (1,4)
-alpha3 = np.array([0, -WEIGHT, -WEIGHT, 0, 1]) # (4,1)
-alpha4 = np.array([0, 0, -WEIGHT, -WEIGHT, 1]) # (4,4)
-p = alpha1.shape[0]
-d = 5
-m = 4
-
-'''
-sigsq1 = 25
-sigsq2 = 25
-sigsq3 = 25
-sigsq4 = 25
-'''
-
-sigsq1 = 2
-sigsq2 = 2
-sigsq3 = 2
-sigsq4 = 2
-
-ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4])
-ex_sigsqs = np.array([sigsq1, sigsq2, sigsq3, sigsq4])
-
-np.random.seed(1)
-init_det_policy = np.random.choice([0,1,2,3], size=(D,D))
-init_policy = stoch_policy(init_det_policy, action_space)
-init_Q = np.random.rand(D,D,4)
-opt_policy, Q = Qlearn(0.5, 0.8, 0.1, 10000, 20, state_space,
-          action_space, rewards, init_policy, init_Q)
-          # This seems to converge robustly to optimal policy,
-          # although Q values have some variance in states where
-          # it doesn't really matter
-visualize_policy(rewards, opt_policy)
-#pol1 = locally_opt(Q, alpha1, sigsq1)[0]
-#pol2 = locally_opt(Q, alpha2, sigsq2)[0]
-#pol3 = locally_opt(Q, alpha3, sigsq3)[0]
-#pol4 = locally_opt(Q, alpha4, sigsq4)[0]
-
-
 
 
 
@@ -469,7 +420,6 @@ def traj_TP(data, TP, Ti, m):
     '''
     s2_thru_sTi = TP[data[:,0,:(Ti-1)],data[:,1,:(Ti-1)]]
     return s2_thru_sTi[np.arange(m)[:,None], np.arange(Ti-1), data[:,0,1:]]
-
 
 def SGD(phi, theta, alpha, sigsq, g_phi, g_theta, g_alpha, g_sigsq, learn_rate):
     phi = phi + learn_rate*g_phi
@@ -732,13 +682,181 @@ def evaluate_vs_random(reps, policy, T, state_space, rewards, init_policy,
           action_space, reward_est, init_policy, init_Q)[0]
         est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='g')
+
+def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
+                        state_space, action_space, rewards, init_policy,
+                        init_Q, J, B, m, M, Ti, learn_rate):
+    true_rew = cumulative_reward(reps, policy, T, state_space, rewards)
+    plt.plot(np.cumsum(true_rew), color='b') 
+    for _ in range(J):
+        theta_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 20, y_t_nest, SGD, plot=False)[1]
+        reward_est = lin_rew_func(theta_star, state_space)
+        est_policy = Qlearn(0.5, 0.8, 0.1, 10000, 20, state_space,
+          action_space, reward_est, init_policy, init_Q)[0]
+        est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
+        plt.plot(np.cumsum(est_rew), color='r')
+        
+        theta_star = MEIRL_unif(theta, beta, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 20, y_t_nest_unif, SGD_unif)[0]
+        reward_est = lin_rew_func(np.random.normal(size=d), state_space)
+        est_policy = Qlearn(0.5, 0.8, 0.1, 10000, 20, state_space,
+          action_space, reward_est, init_policy, init_Q)[0]
+        est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
+        plt.plot(np.cumsum(est_rew), color='g')
     
+def logZ_unif(beta, impa, theta, data, M, TP, action_space):
+    '''
+    Importance sampling approximation of logZ
+    and grad logZ
+    '''
+    reward_est = lin_rew_func(theta, state_space)
+
+    R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
+                      imp_samp_data(data, impa, j, m, Ti).astype(int),
+                      TP, state_space) for j in range(M)]), 0, 1)
+    lst = []
+    for j in range(M):
+        newdata = imp_samp_data(data, impa, j, m, Ti).astype(int)
+        feat_expect = grad_lin_rew(newdata, state_space)
+        #probs = TP[newdata[:,0], newdata[:,1]] 
+        lst.append(feat_expect)
+    gradR_Z = np.swapaxes(np.array(lst), 0, 1)
+    
+    expo = np.exp(beta[:,None,None]*R_Z)
+    volA = len(action_space) # m x N x Ti
+    lvec = np.log(volA*np.mean(expo,axis=1)) # for all times
+    logZvec = lvec.sum(axis=1)
+
+    num_t = expo[:,:,None,:]*beta[:,None,None,None]*gradR_Z
+    num_b = expo*R_Z
+    numsum_t = num_t.sum(axis=1)
+    numsum_b = num_b.sum(axis=1)
+    den = expo.sum(axis=1)
+    glogZ_theta = ((numsum_t/den[:,None,:]).sum(axis=2)).sum(axis=0)
+    glogZ_beta = (numsum_b/den).sum(axis=1)
+    # This appears to approximate the true logZ for the
+    # grid world with 4 actions very well!
+    return logZvec, glogZ_theta, glogZ_beta # m x N; Not averaged over beta!
+
+def beta_grad_unif(glogZ_beta, R_all):
+    '''
+    Output m x 1
+
+    Feasible!
+    '''
+    return -glogZ_beta + R_all.sum(axis=1)
+
+def theta_grad_unif(data, beta, state_space, glogZ_theta):
+    '''
+    Output m x d
+    '''
+    gradR = grad_lin_rew(data, state_space) # m x d x Ti 
+    return -glogZ_theta + (beta[:,None,None]*gradR).sum(axis=2).sum(axis=0) # each term is quite large
+
+def SGD_unif(theta, beta, g_theta, g_beta, learn_rate):
+    theta = theta + learn_rate*g_theta
+    beta = beta + learn_rate*g_beta
+    return theta, beta
+
+def y_t_SGD_unif(theta, theta_m, beta, beta_m, t):
+    return phi, beta
+
+def y_t_nest_unif(theta, theta_m, beta, beta_m, t):
+    const = (t-1)/(t+2)
+    return (theta - const*(theta - theta_m),
+            beta - const*(beta - beta_m))
+
+def MEIRL_unif(theta, beta, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, reps, y_t, update):
+    '''
+    Need the expert trajectories
+
+    y_t is the function used to define modified iterate for Nesterov, if
+    applicable
+    
+    update is e.g. SGD or Adam
+    '''
+    impa = uniform_action_sample(action_space, M)
+    N = len(traj_data)
+    theta_m = np.zeros_like(theta)
+    beta_m = np.zeros_like(beta)
+    t = 1
+    # while error > eps:
+    for _ in range(reps):
+        for n in range(N):
+            y_theta, y_beta = y_t(theta, theta_m,
+              beta, beta_m, t)
+            data = np.array(traj_data[n]) # m x 2 x Ti
+            R_all, E_all = RE_all(y_theta, data, TP, state_space, m)
+            logZvec, glogZ_theta, glogZ_beta = logZ_unif(y_beta, impa,
+              y_theta, data, M, TP, action_space)
+              
+            g_theta = theta_grad_unif(data, y_beta, state_space, glogZ_theta)
+            g_beta = beta_grad_unif(glogZ_beta, R_all)
+          
+            theta_m, beta_m = theta, beta
+            theta, beta = update(y_theta, y_beta, g_theta, g_beta, learn_rate)
+            
+            learn_rate *= 0.99
+            t += 1
+    return theta, beta
+
 # Initializations
 np.random.seed(1)
-    
+
+
+
+TP = transition(state_space, action_space)
+true_theta = np.array([4, 4, -6, -6, 0.1])
+rewards = lin_rew_func(true_theta, state_space)
+#sns.heatmap(rewards)
+# Misspecified reward bases?
+
+# Alpha vectors for the centers of the grid world
+# where each expert is closest to optimal.
+alpha1 = np.array([-WEIGHT, -WEIGHT, 0, 0, 1]) # (1,1)
+alpha2 = np.array([-WEIGHT, 0, 0, -WEIGHT, 1]) # (1,4)
+alpha3 = np.array([0, -WEIGHT, -WEIGHT, 0, 1]) # (4,1)
+alpha4 = np.array([0, 0, -WEIGHT, -WEIGHT, 1]) # (4,4)
+p = alpha1.shape[0]
+d = 5
+m = 4
+
+'''
+sigsq1 = 25
+sigsq2 = 25
+sigsq3 = 25
+sigsq4 = 25
+'''
+
+sigsq1 = 2
+sigsq2 = 2
+sigsq3 = 2
+sigsq4 = 2
+
+ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4])
+ex_sigsqs = np.array([sigsq1, sigsq2, sigsq3, sigsq4])
+
+np.random.seed(1)
+init_det_policy = np.random.choice([0,1,2,3], size=(D,D))
+init_policy = stoch_policy(init_det_policy, action_space)
+init_Q = np.random.rand(D,D,4)
+opt_policy, Q = Qlearn(0.5, 0.8, 0.1, 10000, 20, state_space,
+          action_space, rewards, init_policy, init_Q)
+          # This seems to converge robustly to optimal policy,
+          # although Q values have some variance in states where
+          # it doesn't really matter
+visualize_policy(rewards, opt_policy)
+#pol1 = locally_opt(Q, alpha1, sigsq1)[0]
+#pol2 = locally_opt(Q, alpha2, sigsq2)[0]
+#pol3 = locally_opt(Q, alpha3, sigsq3)[0]
+#pol4 = locally_opt(Q, alpha4, sigsq4)[0]
+
 phi = np.random.rand(m,2)
 alpha = np.random.normal(size=(m,p))
 sigsq = np.random.rand(m)
+beta = np.random.rand(m)
 #theta = np.random.normal(size=d)
 theta = np.array([0, 0, 0, 0, 0]) #prob a good baseline, complete ignorance of
 # rewards
@@ -772,9 +890,16 @@ evaluate(10, opt_policy, 50, state_space, rewards, theta_star, init_policy,
 
 # Maybe massive sigma (used to be 25!) was just drowning out the signal...
 
+'''
+Testing against constant-beta model
+'''
 
+theta_s, beta_s = MEIRL_unif(theta, beta, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 50, y_t_nest_unif, SGD_unif)
 
-
+evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 50,
+                        state_space, action_space, rewards, init_policy,
+                        init_Q, 10, B, m, M, Ti, learn_rate)
 
 
 
@@ -798,40 +923,6 @@ evaluate(10, opt_policy, 50, state_space, rewards, theta_star, init_policy,
 
 
 
-
-
-
-
-def logZ(betas, impa, theta, data, M, TP, action_space):
-    '''
-    Importance sampling approximation of logZ
-    and grad logZ
-    '''
-    reward_est = lin_rew_func(theta, state_space)
-
-    R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
-                      imp_samp_data(data, impa, j, m, Ti).astype(int),
-                      TP, state_space) for j in range(M)]), 0, 1)
-    lst = []
-    for j in range(M):
-        newdata = imp_samp_data(data, impa, j, m, Ti).astype(int)
-        feat_expect = grad_lin_rew(newdata, state_space)
-        #probs = TP[newdata[:,0], newdata[:,1]] 
-        lst.append(feat_expect)
-    gradR_Z = np.swapaxes(np.array(lst), 0, 1)
-    
-    expo = np.exp(np.einsum('ijk,ilk->ijlk', betas, R_Z))
-    volA = len(action_space) # m x N x Ti
-    lvec = np.log(volA*np.mean(expo,axis=2)) # for all times
-    logZvec = lvec.sum(axis=2)
-
-    num = expo[:,:,:,None,:]*np.einsum('ijk,ilmk->ijlmk', betas, gradR_Z)
-    numsum = num.sum(axis=2)
-    den = expo.sum(axis=2)
-    glogZ = (numsum/den[:,:,None,:]).sum(axis=3)
-    # This appears to approximate the true logZ for the
-    # grid world with 4 actions very well!
-    return logZvec, glogZ # m x N; Not averaged over beta!
 
 def grad_check_phi_re(phi, alpha, sigsq, theta, data, Ti,
                      m, state_space, B, impa, ix):
@@ -1005,7 +1096,6 @@ def grad_check_theta_re(phi, alpha, sigsq, theta, data, Ti,
     change = (n_t_g.mean(axis=1)).sum()
     return a_t_g[ix], change
 
-
 def grad_terms(betas, phi, alpha, sigsq, theta, data, R_all,
              E_all, Ti, logZvec, m):
     '''
@@ -1028,44 +1118,3 @@ def logp(state_space, Ti, sigsq, gnorm, data, TP, m, betas, R_all, logZvec):
 
 def logq(Ti, denom, vecnorm):
     return -Ti/2*np.log(2*np.pi*denom)[:,None] - vecnorm/((2*denom)[:,None])
-
-def phi_grad(vec, one, denom, vecnorm, lp, lq):
-    '''
-    Output is m x 2; expectation is applied
-
-    Will need to make sure feasible
-    '''
-    num1 = vec.dot(one)
-    phigrad1 = num1/denom[:,None]
-    phigrad2 = -Ti/(2*denom)[:,None] + vecnorm/((2*denom**2)[:,None])
-    logdens = lp - lq
-    return np.array([(phigrad1 * logdens).mean(axis=1), (phigrad2 * logdens).mean(axis=1)]).transpose()
-
-def alpha_grad(E_all, gvec, vec, denom, lp, lq):
-    '''
-    Output m x p
-    '''
-    p1 = 1/sigsq[:,None,None]*np.einsum('ijk,ilk->ilj', E_all, gvec)
-    p2 = 1/denom[:,None,None]*np.einsum('ijk,ilk->ilj', E_all, vec)
-    return np.mean(p1 + p2*(lp - lq)[:,:,None], axis=1)
-
-def sigsq_grad(Ti, sigsq, gnorm, denom, R_all, vec, lp, lq, vecnorm):
-    '''
-    Output m x 1
-
-    Feasible!
-    '''
-    p1 = -Ti/(2*sigsq[:,None]) + gnorm/(2*sigsq[:,None]**2)
-    p2 = -Ti/(2*denom[:,None]) + np.einsum('ik,ilk->il', R_all, vec)/denom[:,None] + vecnorm/(2*denom[:,None]**2)
-    return np.mean(p1 + p2*(lp - lq), axis=1)
-
-def theta_grad(data, betas, sigsq, state_space, denom, vec, glogZ, lp, lq):
-    '''
-    Output m x d
-    '''
-    gradR = grad_lin_rew(data, state_space) # m x d x Ti 
-    p1 = -glogZ + np.einsum('ijk,imk->imj', gradR, betas) # each term is quite large
-      #for theta index 0 and 4; however index 4 cancels entirely because psi is
-      #constant!
-    p2 = np.swapaxes((sigsq/denom)[:,None,None] * np.einsum('ijk,ilk->ijl', gradR, vec), 1, 2)
-    return np.sum(np.mean(p1 + p2*(lp - lq)[:,:,None], axis=1), axis=0)
