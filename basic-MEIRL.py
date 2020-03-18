@@ -196,21 +196,6 @@ def beta_func(alpha, sigsq):
     muvals = mu_all(alpha)
     return muvals + noise
 
-def locally_opt(Q_star, alpha, sigsq):
-    '''
-    Given optimal Q* and some "state of expertise",
-    returns a stochastic policy for an agent whose
-    beta is ideal centered around that state.
-
-    high beta = high expertise
-
-    CHANGE THIS
-    '''
-    beta = beta_func(alpha, sigsq)
-    policy = softmax(Q_star, beta, 2)
-    det_pol = np.argmax(policy, axis=2)
-    return policy, det_pol
-
 
 '''
 Going to test on trajectories from Q* model rather than one-step,
@@ -310,6 +295,29 @@ def synthetic_traj_myo(rewards, alpha, sigsq, i, Ti, state_space, action_space,
         actions.append(a)
     return list(multi_state_index(np.array(states))), actions
 
+def synthetic_traj_Q(rewards, alpha, sigsq, i, Ti, state_space, action_space,
+                       init_state_sample, TP, Q_star):
+    '''
+    Generate a fake trajectory based on given
+    policy. Need to separately generate
+    variational distribution parameters if want to
+    use those.
+    
+    EDIT FOR LOCALLY OPT
+    '''
+    s = init_state_sample(state_space)
+    states = [s]
+    beta = mu(s, alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
+    a = np.random.choice(action_space, p = softmax(Q_star[s[0],s[1]], beta))
+    actions = [a]
+    for _ in range(Ti-1):
+        s = grid_step(s,a)
+        states.append(s)
+        beta = mu(s, alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
+        a = np.random.choice(action_space, p = softmax(Q_star[s[0],s[1]], beta))
+        actions.append(a)
+    return list(multi_state_index(np.array(states))), actions
+
 def see_trajectory(reward_map, state_seq):
     '''
     Input state seq is in index form; can transform to tuples
@@ -320,7 +328,8 @@ def see_trajectory(reward_map, state_seq):
         plt.annotate('*', (s[1]+0.2,s[0]+0.7), color='b', size=24)
         plt.show()
 
-def make_data(Q, alphas, sigsqs, reward_str, N, Ti):
+def make_data_Q(alpha, sigsqs, reward_str, N, Ti, state_space, action_space,
+                     init_state_sample, TP, m, Q):
     '''
     Creates N trajectories each for local experts, given Q,
     alphas, sigsqs, rewards (which may be "true" or
@@ -328,11 +337,9 @@ def make_data(Q, alphas, sigsqs, reward_str, N, Ti):
     
     OLD
     '''
-    policies = [locally_opt(Q, alphas[i],
-                            sigsqs[i])[0] for i in range(m)]
     trajectories = [
-        [synthetic_traj(reward_str, policies[i], Ti, state_space,
-                        action_space, init_state_sample)[:2] for i in range(m)]
+        [synthetic_traj_Q(reward_str, alpha, sigsq, i, Ti, state_space, action_space,
+                       init_state_sample, TP, Q) for i in range(m)]
         for _ in range(N)
     ]
     # first index is N
@@ -751,7 +758,7 @@ def rep_evaluate(reps, policy, T, state_space, rewards, init_policy,
 
 def evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
                         state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, learn_rate):
+                        init_Q, J, B, m, M, Ti, learn_rate, traj_data):
     true_rew = cumulative_reward(reps, policy, T, state_space, rewards)
     plt.plot(np.cumsum(true_rew), color='b') 
     true_total = np.sum(true_rew)
@@ -777,7 +784,7 @@ def evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
 
 def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
                         state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, learn_rate):
+                        init_Q, J, B, m, M, Ti, learn_rate, traj_data):
     true_rew = cumulative_reward(reps, policy, T, state_space, rewards)
     plt.plot(np.cumsum(true_rew), color='b') 
     true_total = np.sum(true_rew)
@@ -805,7 +812,7 @@ def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
 
 def evaluate_vs_uniform_init(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
                         state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, learn_rate):
+                        init_Q, J, B, m, M, Ti, learn_rate, traj_data):
     true_rew = cumulative_reward(reps, policy, T, state_space, rewards)
     plt.plot(np.cumsum(true_rew), color='b') 
     true_total = np.sum(true_rew)
@@ -997,7 +1004,8 @@ theta = np.array([0, 0, 0, 0, 0])
 
 traj_data = make_data_myopic(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
                      init_state_sample, TP, m)
-data = np.array(traj_data[0]) # for testing
+boltz_data = make_data_Q(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
+                     init_state_sample, TP, m, Q)
 # first index is n=1 to N
 # second index is expert
 # third is states, actions
@@ -1008,6 +1016,9 @@ phi_star, theta_star, alpha_star, sigsq_star = AEVB(theta, alpha, sigsq, phi, tr
 # from the truly specified model
 phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 20, y_t_nest, SGD)
+
+phi_star_b, theta_star_b, alpha_star_b, sigsq_star_b = AEVB(theta, alpha, sigsq, phi, boltz_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 3, y_t_nest, SGD)
 
 evaluate(10, opt_policy, 50, state_space, rewards, theta, init_policy,
              init_Q)
@@ -1027,11 +1038,15 @@ theta_s, beta_s = MEIRL_unif(theta, beta, traj_data, TP, state_space,
 
 true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 20,
                         state_space, action_space, rewards, init_policy,
-                        init_Q, 30, B, m, M, Ti, learn_rate)
+                        init_Q, 30, B, m, M, Ti, learn_rate, traj_data)
+
+true_tot_b, AEVB_tot_b, unif_tot_b = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 20,
+                        state_space, action_space, rewards, init_policy,
+                        init_Q, 30, B, m, M, Ti, learn_rate, boltz_data)
 
 true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform_init(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 20,
                         state_space, action_space, rewards, init_policy,
-                        init_Q, 30, B, m, M, Ti, learn_rate)
+                        init_Q, 30, B, m, M, Ti, learn_rate, traj_data)
 # evidently sensitive to initialization, but maybe there's something principled
 # about initializing at theta = 0? Implies prior of ignorance about reward
 
@@ -1046,7 +1061,7 @@ true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform_init(theta, alpha, sigsq, phi
 
 tr_tot, AE_tot, ra_tot = evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 20,
                         state_space, action_space, rewards, init_policy,
-                        init_Q, 30, B, m, M, Ti, learn_rate)
+                        init_Q, 30, B, m, M, Ti, learn_rate, traj_data)
 
 
 
