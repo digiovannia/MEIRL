@@ -758,7 +758,7 @@ def evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
     AEVB_total = []
     random_total = []
     for _ in range(J):
-        theta_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+        theta_star = ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 5, y_t_nest, SGD, plot=False)[1]
         reward_est = lin_rew_func(theta_star, state_space)
         est_policy = Qlearn(0.5, 0.8, 0.1, 10000, 20, state_space,
@@ -784,6 +784,39 @@ def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
     AEVB_total = []
     unif_total = []
     for _ in range(J):
+        theta_star = ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 5, y_t_nest, SGD, plot=False)[1]
+        reward_est = lin_rew_func(theta_star, state_space)
+        est_policy = Qlearn(0.5, 0.8, 0.1, 10000, 20, state_space,
+          action_space, reward_est, init_policy, init_Q)[0]
+        est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
+        plt.plot(np.cumsum(est_rew), color='r')
+        AEVB_total.append(np.sum(est_rew))
+        
+        theta_star = MEIRL_unif(theta, beta, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 5, y_t_nest_unif, SGD_unif)[0]
+        reward_est = lin_rew_func(np.random.normal(size=d), state_space)
+        est_policy = Qlearn(0.5, 0.8, 0.1, 10000, 20, state_space,
+          action_space, reward_est, init_policy, init_Q)[0]
+        est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
+        plt.plot(np.cumsum(est_rew), color='g')
+        unif_total.append(np.sum(est_rew))
+    return true_total, AEVB_total, unif_total
+
+def evaluate_vs_uniform_init(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
+                        state_space, action_space, rewards, init_policy,
+                        init_Q, J, B, m, M, Ti, learn_rate):
+    true_rew = cumulative_reward(reps, policy, T, state_space, rewards)
+    plt.plot(np.cumsum(true_rew), color='b') 
+    true_total = np.sum(true_rew)
+    AEVB_total = []
+    unif_total = []
+    for _ in range(J):
+        phi = np.random.rand(m,2)
+        alpha = np.random.normal(size=(m,p), scale=0.05)
+        sigsq = np.random.rand(m)
+        theta = np.random.normal(size=d)
+        
         theta_star = ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 5, y_t_nest, SGD, plot=False)[1]
         reward_est = lin_rew_func(theta_star, state_space)
@@ -992,10 +1025,16 @@ Testing against constant-beta model
 theta_s, beta_s = MEIRL_unif(theta, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 50, y_t_nest_unif, SGD_unif)
 
-true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 50,
+true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 20,
                         state_space, action_space, rewards, init_policy,
-                        init_Q, 10, B, m, M, Ti, learn_rate)
-                        # takes about 14 minutes to run on dell; 8 min on mac, yikes
+                        init_Q, 30, B, m, M, Ti, learn_rate)
+
+true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform_init(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 20,
+                        state_space, action_space, rewards, init_policy,
+                        init_Q, 30, B, m, M, Ti, learn_rate)
+# evidently sensitive to initialization, but maybe there's something principled
+# about initializing at theta = 0? Implies prior of ignorance about reward
+
 
 # promising results when using N = 50 and reps = 5, but might
 # not replicate...
