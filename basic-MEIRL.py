@@ -8,12 +8,8 @@ Agent can move in cardinal directions; moves in intended direction
 with prob 1-MOVE_NOISE, else uniform direction. If moves in illegal
 direction, stays in place.
 
-Will find optimal Q values by Q-learning.
-
 Actions: 0 = up, 1 = right, 2 = down, 3 = left
 '''
-
-np.random.seed(1)
 
 # Global params
 D=16 #8 #6
@@ -24,19 +20,12 @@ WEIGHT = 2
 RESCALE = 1/6
 RESET = 20
 M = 20 # number of actions used for importance sampling
-N = 20 # number of trajectories per expert
+N = 50 # number of trajectories per expert
 Ti = 50 # length of trajectory
 B = 50#100 # number of betas/normals sampled for expectation
 Q_ITERS = 50000
 learn_rate = 0.0001
 
-'''
-# Used in second wave of experiments, when D = 8
-centers_x = [0, D-2, 3, D-1]
-centers_y = [2, D-1, D-2, 0]
-'''
-centers_x = np.random.choice(D, D//2)
-centers_y = np.random.choice(D, D//2)
 
 def manh_dist(p1, p2):
     return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
@@ -220,7 +209,8 @@ may want to randomly generate a bunch of these
 
 def arr_radial(s, c):
     #return np.exp(-5*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
-    return RESCALE*np.exp(-2*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
+#    return RESCALE*np.exp(-2*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
+    return RESCALE*np.exp(-0.5*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
 
 def psi_all_states(state_space, centers_x, centers_y):
     # d x D**2
@@ -947,9 +937,16 @@ def MEIRL_unif(theta, beta, traj_data, TP, state_space,
     return theta, beta
 
 # Initializations
-np.random.seed(1)
+#np.random.seed(1)
+np.random.seed(2)
 
-
+'''
+# Used in second wave of experiments, when D = 8
+centers_x = [0, D-2, 3, D-1]
+centers_y = [2, D-1, D-2, 0]
+'''
+centers_x = np.random.choice(D, D//2)
+centers_y = np.random.choice(D, D//2)
 
 # Making gridworld
 state_space = np.array([(i,j) for i in range(D) for j in range(D)])
@@ -958,7 +955,7 @@ TP = transition(state_space, action_space)
 #true_theta = np.array([4, 4, -6, -6, 0.1])
 true_theta = np.random.normal(size = D // 2 + 1, scale=3)
 rewards = lin_rew_func(true_theta, state_space, centers_x, centers_y)
-#sns.heatmap(rewards)
+sns.heatmap(rewards)
 # Misspecified reward bases?
 
 # Alpha vectors for the centers of the grid world
@@ -996,47 +993,6 @@ opt_policy, Q = Qlearn(0.5, 0.8, 0.1, 50000, 20, state_space,
           # although Q values have some variance in states where
           # it doesn't really matter
 visualize_policy(rewards, opt_policy)
-
-'''
-Q_ITERS
-
-array([[4.79518217, 4.80181749, 4.82886751, 4.78462444],
-       [4.79454678, 4.78558478, 4.84092656, 4.80960046],
-       [4.65896677, 4.64857345, 4.79479688, 4.82882886],
-       [4.21724729, 2.72043909, 2.78609668, 4.82137288],
-       [4.83595638, 4.90525578, 4.76949515, 4.41482196],
-       [4.33076349, 4.933252  , 4.90256667, 3.67946246],
-       [4.89680966, 4.96011859, 4.78600925, 4.88017178],
-       [4.97164142, 5.03880167, 4.93967424, 4.93828945],
-       [5.01644033, 5.07018379, 5.10338328, 4.97746723],
-       [4.80442733, 5.18085445, 5.00740097, 5.0076587 ],
-       [5.19223196, 5.19379013, 5.20856753, 5.10809434],
-       [5.17581072, 5.40449898, 5.23992375, 5.07781116],
-       [5.42229706, 5.55498595, 5.54996163, 5.2761763 ],
-       [5.5910365 , 5.60320871, 5.75471023, 5.41351066],
-       [5.77546451, 5.93304797, 5.8108991 , 5.59468584],
-       [5.06609249, 5.6995639 , 6.36997254, 5.98035778]])
-
-50000
-
-array([[4.82101295, 4.83755095, 4.82171706, 4.74985797],
-       [4.83602735, 4.85117664, 4.83653497, 4.82824614],
-       [4.84753413, 4.86649243, 4.85252944, 4.83453388],
-       [4.85974372, 4.88536916, 4.88024462, 4.86908287],
-       [4.88720773, 4.90389847, 4.91123489, 4.86574152],
-       [4.91259703, 4.94665549, 4.93681005, 4.88490809],
-       [4.94657122, 4.98697795, 4.95947852, 4.9169198 ],
-       [4.99555049, 5.04275488, 4.99202531, 4.94968679],
-       [5.04038075, 5.11715144, 5.08272316, 4.9922826 ],
-       [5.0910171 , 5.14874991, 5.20688604, 5.03924595],
-       [5.19049127, 5.30218371, 5.26811683, 5.10269627],
-       [5.29830883, 5.43999454, 5.40014128, 5.2063777 ],
-       [5.42192203, 5.56706604, 5.59732271, 5.28692009],
-       [5.60450107, 5.7904731 , 5.81596912, 5.43680394],
-       [5.80545019, 5.96279054, 6.00808119, 5.59646856],
-       [6.00092199, 6.03441485, 6.20456532, 5.7686485 ]])
-'''
-
 
 phi = np.random.rand(m,2)
 alpha = np.random.normal(size=(m,p), scale=0.05)
@@ -1104,13 +1060,23 @@ true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform_init(theta, alpha, sigsq, phi
 ## mean(unif_tot) = 621.5
 # Another rep: no better than random...
 
+# Appears to work better when the reward signal is less sparse (i.e. arr_radial
+# has less sharp drop-off)
+
+# works p well even under misspecification for D = 8
+# doesn't really work on D = 16 grid
+
 tr_tot, AE_tot, ra_tot = evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 20,
                         state_space, action_space, rewards, init_policy,
                         init_Q, 30, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y)
 
 
 
-
+'''
+To do:
+    * misspec of reward function?
+    * misspec of beta mean?
+'''
 
 
 ##### gradient checking and old bad gradients #####
