@@ -378,26 +378,6 @@ def RE_all(theta, data, TP, state_space, m, centers_x, centers_y):
     E_all = eta_mat(data)
     return R_all, E_all
 
-def sample_all_MV_beta(phi, alpha, sigsq, theta, R_all, E_all, data, TP,
-                       state_space, B, m):
-    '''
-    For each expert, get B samples of betas from variational posterior.
-    Assumes the input data consists of one trajectory for each expert.
-
-    Output is m x B x Ti
-    '''
-    mus = sigsq[:,None]*R_all + np.einsum('ijk,ij->ik', E_all, alpha) + phi[:,0][:,None]*np.ones(R_all.shape[:2])
-    Covs = np.einsum('i,jk->ijk', sigsq+phi[:,1], np.eye(R_all.shape[1]))
-
-    #mus = np.array([sigsq[i]*R_all[i] + E_all[i].transpose().dot(alpha[i]) + phi[i,0]*np.ones(R_all[i].shape[0]) for i in range(m)])
-    #Covs = np.array([(sigsq[i]+phi[i,1])*np.eye(R_all[i].shape[0]) for i in range(m)])
-    return np.array([np.random.multivariate_normal(mus[i], Covs[i], B) for i in range(m)])
-
-'''
-Need to average over sample betas in the
-following four functions
-'''
-
 def rho(state_space):
     return 1/len(state_space)
 
@@ -515,6 +495,8 @@ def AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
     y_alpha = alpha.copy()
     y_sigsq = sigsq.copy()
     t = 1
+    # maybe don't need to resample normals every time? testing this out
+    normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
     # while error > eps:
     for _ in range(reps):
         permut = list(np.random.permutation(range(N)))
@@ -523,7 +505,6 @@ def AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
             #  alpha, alpha_m, sigsq, sigsq_m, t)
             data = np.array(traj_data[n]) # m x 2 x Ti
             R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
-            normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
             meanvec, denom, gvec, gnorm = grad_terms_re(normals,
               y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
             logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals,
@@ -663,26 +644,7 @@ def logprobs(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all, logZvec
     lq = -Ti/2*np.log(2*np.pi*denom)[:,None] - epsnorm/2
     return lp - lq
 
-'''
-def logp_re(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all, logZvec, meanvec):
-    p1 = np.log(rho(state_space)) - Ti/2*np.log(2*np.pi*sigsq)[:,None] - 1/(2*sigsq)[:,None]*gnorm
-    logT = np.log(traj_TP(data, TP, Ti, m))
-    p2 = np.einsum('ijk,ik->ij', meanvec, R_all) - logZvec + np.sum(logT, axis=1)[:,None]
-    return p1 + p2
-
-def logq_re(Ti, denom, normals):
-    epsnorm = np.einsum('ijk,ijk->ij', normals, normals)
-    return -Ti/2*np.log(2*np.pi*denom)[:,None] - epsnorm/2
-'''
-
 def phi_grad_re(phi, m, Ti, normals, denom, sigsq, glogZ_phi):
-    '''
-    Output is m x 2; expectation is applied
-
-    WORKS, but slightly high variance
-    
-    Feasible?
-    '''
     x = (phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:] + (denom**(1/2))[:,None,None]*normals
     y1 = 1/sigsq[:,None]*x.sum(axis=2)
     y2 = np.einsum('ijk,ijk->ij', normals, x)/((2*sigsq*denom**(1/2))[:,None]) - Ti/(2*denom)[:,None]
@@ -690,19 +652,11 @@ def phi_grad_re(phi, m, Ti, normals, denom, sigsq, glogZ_phi):
     return np.swapaxes(np.mean(result, axis=2), 0, 1)
 
 def alpha_grad_re(glogZ_alpha, E_all, R_all):
-    '''
-    WORKS!
-    '''
     result = -glogZ_alpha + np.einsum('ijk,ik->ij', E_all, R_all)[:,None,:]
     return np.mean(result, axis=1)
 
 def sigsq_grad_re(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all,
                   gvec):
-    '''
-    WORKS!
-
-    Feasible?
-    '''
     q_grad = -Ti/(2*denom)
     x = -Ti/(2*sigsq) + np.einsum('ij,ij->i', R_all, R_all)
     y = np.einsum('ijk,ik->ij', normals, R_all)/(2*denom**(1/2))[:,None]
@@ -714,14 +668,13 @@ def sigsq_grad_re(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all,
 
 def log_mean_exp(tensor):
     K = np.max(tensor, axis=2)
-    expo = np.exp(tensor - K[:,:,None,:]) #getting ZEROS and INFs
-    # USE LOG SUM EXP TRICK
-    # may need K to be m x B x Ti; same shape as lvec
+    expo = np.exp(tensor - K[:,:,None,:])
     return np.log(np.mean(expo,axis=2)) + K
 
 def logZ_re(normals, meanvec, denom, impa, theta, data, M, TP,
             R_all, E_all, action_space, centers_x, centers_y):
     reward_est = lin_rew_func(theta, state_space, centers_x, centers_y)
+    # vectorize?
     R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
                       imp_samp_data(data, impa, j, m, Ti).astype(int),
                       TP, state_space) for j in range(M)]), 0, 1)
