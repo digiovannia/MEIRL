@@ -605,14 +605,14 @@ def ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
                 alpha_m = np.zeros_like(alpha)
                 sigsq_m = np.zeros_like(sigsq)
                 learn_rate = start_lr
-                phi += np.random.normal(scale=np.max(np.abs(phi))/2,
+                phi += np.random.normal(scale=2*np.max(np.abs(phi)),
                   size=phi.shape)
                 phi[:,1] = np.maximum(phi[:,1], 0.01)
-                theta += np.random.normal(scale=np.max(np.abs(theta))/2,
+                theta += np.random.normal(scale=2*np.max(np.abs(theta)),
                   size=theta.shape)
-                alpha += np.random.normal(scale=np.max(np.abs(alpha))/2,
+                alpha += np.random.normal(scale=2*np.max(np.abs(alpha)),
                   size=alpha.shape)
-                sigsq += np.random.normal(scale=np.max(sigsq)/2,
+                sigsq += np.random.normal(scale=2*np.max(sigsq),
                   size=sigsq.shape)
                 sigsq = np.maximum(sigsq, 0.01)
                 time_since_best = 0
@@ -629,10 +629,10 @@ def grad_terms_re(normals, phi, alpha, sigsq, theta, data, R_all,
     '''
     denom = sigsq + phi[:,1]
     sc_normals = (denom**(1/2))[:,None,None]*normals
-    aE = np.einsum('ij,ijk->ik', alpha, E_all)
+    aE = np.einsum('ij,ijk->ik', alpha, E_all) #faster than tensordot
     meanvec = sc_normals + (sigsq[:,None]*R_all + aE + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:]
     gvec = sc_normals + (sigsq[:,None]*R_all + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:]
-    gnorm = np.einsum('ijk,ijk->ij', gvec, gvec)
+    gnorm = np.einsum('ijk,ijk->ij', gvec, gvec) #faster than tensordotl, but still p slow
     return meanvec, denom, gvec, gnorm
 
 def logprobs(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all, logZvec, meanvec, denom):
@@ -1027,8 +1027,13 @@ boltz_data = make_data_Q(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, acti
 # second index is expert
 # third is states, actions
 
-phi_star, theta_star, alpha_star, sigsq_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+phi_star, theta_star, alpha_star, sigsq_star = ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 3, y_t_nest, SGD)
+dumb_data = make_data_myopic(alpha_star, sigsq_star, lin_rew_func(theta_star,
+                            state_space, centers_x, centers_y), N, Ti, state_space, action_space,
+                            init_state_sample, TP, m)
+# see_trajectory(rewards, np.array(traj_data[0])[0,0])
+
 # this works p well, when true sigsq is set to 2 and the trajectories come
 # from the truly specified model
 phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
@@ -1078,8 +1083,18 @@ true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform_init(theta, alpha, sigsq, phi
 ## mean(unif_tot) = 621.5
 # Another rep: no better than random...
 
-# Appears to work better when the reward signal is less sparse (i.e. arr_radial
-# has less sharp drop-off)
+# when less sparse reward, does *worse* than uniform model...
+# Problem seems to boil down to degeneracy - many thetas have close-to-optimal ELBO
+# (about -290 for true params vs -330 for theta_star that gives wrong answer)
+# yet assign drastically different reward profiles, e.g. bad state becomes good
+# and good becomes bad
+# **** lemme see if increasing sample size changes this
+# **** yeah it widens gap a bit, although not much; now its -273 for true, -320 for a
+# **** very wrong answer
+
+# maybe the problem is just intrinsically hard to the extent that the agent
+# has to infer which combination of expert-wrongness-in-which-locations and
+# true reward is correct. This is pretty nontrivial - could a human even do this?
 
 # works p well even under misspecification for D = 8
 # doesn't really work on D = 16 grid
