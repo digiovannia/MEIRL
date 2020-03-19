@@ -464,17 +464,74 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
               alpha, alpha_m, sigsq, sigsq_m, t)
             data = np.array(traj_data[n]) # m x 2 x Ti
             R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
-            normals = np.array([np.random.multivariate_normal(np.zeros(Ti),
-              np.eye(Ti), B) for i in range(m)])
+            normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
             meanvec, denom, gvec, gnorm = grad_terms_re(normals,
               y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
             logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals,
               meanvec, denom, impa, y_theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
           
-            lp = logp_re(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
-              logZvec, meanvec).mean(axis=1).sum()
-            lq = logq_re(Ti, denom, normals).mean(axis=1).sum()
-            elbo.append(lp - lq)
+            logprobdiff = logprobs(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
+              logZvec, meanvec, denom).mean(axis=1).sum()
+            elbo.append(logprobdiff)
+            #print(lp - lq)
+              
+            g_phi = phi_grad_re(y_phi, m, Ti, normals, denom, y_sigsq, glogZ_phi)
+            g_theta = theta_grad_re(glogZ_theta, data, state_space, R_all, E_all,
+              y_sigsq, y_alpha, centers_x, centers_y)
+            g_alpha = alpha_grad_re(glogZ_alpha, E_all, R_all)
+            g_sigsq = sigsq_grad_re(glogZ_sigsq, normals, Ti, y_sigsq, gnorm, denom,
+              R_all, gvec)
+          
+            phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
+            phi, theta, alpha, sigsq = update(y_phi, y_theta, y_alpha, y_sigsq, g_phi,
+              g_theta, g_alpha, g_sigsq, learn_rate)
+            
+            learn_rate *= 0.99
+            t += 1
+    if plot:
+        plt.plot(elbo)
+    return phi, theta, alpha, sigsq
+
+def AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, reps, y_t, update,
+         plot=True):
+    '''
+    Need the expert trajectories
+
+    y_t is the function used to define modified iterate for Nesterov, if
+    applicable
+    
+    update is e.g. SGD or Adam
+    '''
+    impa = uniform_action_sample(action_space, M)
+    N = len(traj_data)
+    elbo = []
+    phi_m = np.zeros_like(phi)
+    theta_m = np.zeros_like(theta)
+    alpha_m = np.zeros_like(alpha)
+    sigsq_m = np.zeros_like(sigsq)
+    y_phi = phi.copy()
+    y_theta = theta.copy()
+    y_alpha = alpha.copy()
+    y_sigsq = sigsq.copy()
+    t = 1
+    # while error > eps:
+    for _ in range(reps):
+        permut = list(np.random.permutation(range(N)))
+        for n in permut:
+            #y_phi, y_theta, y_alpha, y_sigsq = y_t(phi, phi_m, theta, theta_m,
+            #  alpha, alpha_m, sigsq, sigsq_m, t)
+            data = np.array(traj_data[n]) # m x 2 x Ti
+            R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
+            normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
+            meanvec, denom, gvec, gnorm = grad_terms_re(normals,
+              y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
+            logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals,
+              meanvec, denom, impa, y_theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
+          
+            logprobdiff = logprobs(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
+              logZvec, meanvec, denom).mean(axis=1).sum()
+            elbo.append(logprobdiff)
             #print(lp - lq)
               
             g_phi = phi_grad_re(y_phi, m, Ti, normals, denom, y_sigsq, glogZ_phi)
@@ -527,19 +584,16 @@ def ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
               theta_m, alpha, alpha_m, sigsq, sigsq_m, t)
             data = np.array(traj_data[n]) # m x 2 x Ti
             R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
-            normals = np.array([np.random.multivariate_normal(np.zeros(Ti),
-              np.eye(Ti), B) for i in range(m)])
+            normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
             meanvec, denom, gvec, gnorm = grad_terms_re(normals,
               y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
             (logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq,
               glogZ_phi) = logZ_re(normals, meanvec, denom, impa, y_theta,
               data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
           
-            lp = logp_re(state_space, Ti, y_sigsq, gnorm, data, TP, m,
-              normals, R_all, logZvec, meanvec).mean(axis=1).sum()
-            lq = logq_re(Ti, denom, normals).mean(axis=1).sum()
-            elboval = lp - lq
-            elbo.append(elboval)
+            logprobdiff = logprobs(state_space, Ti, y_sigsq, gnorm, data, TP, m,
+              normals, R_all, logZvec, meanvec, denom).mean(axis=1).sum()
+            elbo.append(logprobdiff)
             #print(lp - lq)
               
             g_phi = phi_grad_re(y_phi, m, Ti, normals, denom, y_sigsq,
@@ -554,8 +608,8 @@ def ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
             phi, theta, alpha, sigsq = update(y_phi, y_theta, y_alpha,
               y_sigsq, g_phi, g_theta, g_alpha, g_sigsq, learn_rate)
 
-            if elboval > best:
-                best = elboval
+            if logprobdiff > best:
+                best = logprobdiff
                 best_phi = phi.copy()
                 best_theta = theta.copy()
                 best_alpha = alpha.copy()
@@ -595,11 +649,21 @@ def grad_terms_re(normals, phi, alpha, sigsq, theta, data, R_all,
     denom = sigsq + phi[:,1]
     sc_normals = (denom**(1/2))[:,None,None]*normals
     aE = np.einsum('ij,ijk->ik', alpha, E_all)
-    meanvec = sc_normals + (sigsq[:,None]*R_all + aE + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:] #looks good
-    gvec = sc_normals + (sigsq[:,None]*R_all + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:] #betas - aE[:,None,:]
+    meanvec = sc_normals + (sigsq[:,None]*R_all + aE + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:]
+    gvec = sc_normals + (sigsq[:,None]*R_all + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:]
     gnorm = np.einsum('ijk,ijk->ij', gvec, gvec)
     return meanvec, denom, gvec, gnorm
 
+def logprobs(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all, logZvec, meanvec, denom):
+    p1 = np.log(rho(state_space)) - Ti/2*np.log(2*np.pi*sigsq)[:,None] - 1/(2*sigsq)[:,None]*gnorm
+    logT = np.log(traj_TP(data, TP, Ti, m))
+    p2 = np.einsum('ijk,ik->ij', meanvec, R_all) - logZvec + np.sum(logT, axis=1)[:,None]
+    lp = p1 + p2    
+    epsnorm = np.einsum('ijk,ijk->ij', normals, normals)
+    lq = -Ti/2*np.log(2*np.pi*denom)[:,None] - epsnorm/2
+    return lp - lq
+
+'''
 def logp_re(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all, logZvec, meanvec):
     p1 = np.log(rho(state_space)) - Ti/2*np.log(2*np.pi*sigsq)[:,None] - 1/(2*sigsq)[:,None]*gnorm
     logT = np.log(traj_TP(data, TP, Ti, m))
@@ -609,6 +673,7 @@ def logp_re(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all, logZvec,
 def logq_re(Ti, denom, normals):
     epsnorm = np.einsum('ijk,ijk->ij', normals, normals)
     return -Ti/2*np.log(2*np.pi*denom)[:,None] - epsnorm/2
+'''
 
 def phi_grad_re(phi, m, Ti, normals, denom, sigsq, glogZ_phi):
     '''
@@ -783,7 +848,7 @@ def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
     AEVB_total = []
     unif_total = []
     for _ in range(J):
-        theta_star = ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+        theta_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 5, y_t_nest, SGD, plot=False)[1]
         reward_est = lin_rew_func(theta_star, state_space, centers_x, centers_y)
         est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
@@ -1076,6 +1141,12 @@ tr_tot, AE_tot, ra_tot = evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, 
 To do:
     * misspec of reward function?
     * misspec of beta mean?
+    * adaptive restart
+    * regularize on theta norm
+    * more/longer trajectories? Could shorten the training traj to speed training
+     but have longer test trajectories to see if long-term reward is improved
+    * try different mu functions for the locally optimal experts; maybe
+     need some threshold of optimality for each expert to get good results
 '''
 
 
@@ -1102,8 +1173,7 @@ def grad_check_phi_re(phi, alpha, sigsq, theta, data, Ti,
     epsilon = 1e-4
 
     R_all, E_all = RE_all(theta, data, TP, state_space, m, centers_x, centers_y)
-    normals = np.array([np.random.multivariate_normal(np.zeros(Ti),
-      np.eye(Ti), B) for i in range(m)])
+    normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
     meanvec, denom, gvec, gnorm = grad_terms_re(normals,
       phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m)
     logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals, meanvec, denom, impa, theta, data, M, TP, R_all, E_all,
@@ -1123,15 +1193,12 @@ def grad_check_phi_re(phi, alpha, sigsq, theta, data, Ti,
     logZvec_r, glogZ_theta_r, glogZ_alpha_r, glogZ_sigsq_r, glogZ_phi_r = logZ_re(normals,
       meanvec_r, denom_r, impa, theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
 
-    lp_l = logp_re(state_space, Ti, sigsq, gnorm_l, data, TP, m, normals, R_all,
-      logZvec_l, meanvec_l)
-    lp_r = logp_re(state_space, Ti, sigsq, gnorm_r, data, TP, m, normals, R_all,
-      logZvec_r, meanvec_r)
-    
-    lq_l = logq_re(Ti, denom_l, normals)
-    lq_r = logq_re(Ti, denom_r, normals)
+    logprobdiff_l = logprobs(state_space, Ti, sigsq, gnorm_l, data, TP, m, normals, R_all,
+      logZvec_l, meanvec_l, denom_l)
+    logprobdiff_r = logprobs(state_space, Ti, sigsq, gnorm_r, data, TP, m, normals, R_all,
+      logZvec_r, meanvec_r, denom_r)
 
-    n_t_g = (lp_l - lq_l - lp_r + lq_r)/(2*epsilon)
+    n_t_g = (logprobdiff_l - logprobdiff_r)/(2*epsilon)
     change = n_t_g.mean(axis=1)
     return a_p_g[:,ix], change
 
@@ -1143,7 +1210,7 @@ def grad_check_alpha_re(phi, alpha, sigsq, theta, data, Ti,
     epsilon = 1e-4
 
     R_all, E_all = RE_all(theta, data, TP, state_space, m, centers_x, centers_y)
-    normals = np.array([np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), B) for i in range(m)])
+    normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
     meanvec, denom, gvec, gnorm = grad_terms_re(normals,
       phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m)
 
@@ -1164,15 +1231,12 @@ def grad_check_alpha_re(phi, alpha, sigsq, theta, data, Ti,
     logZvec_r, glogZ_theta_r, glogZ_alpha_r, glogZ_sigsq_r, glogZ_phi_r = logZ_re(normals,
       meanvec_r, denom_r, impa, theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
 
-    lp_l = logp_re(state_space, Ti, sigsq, gnorm_l, data, TP, m, normals, R_all,
-      logZvec_l, meanvec_l)
-    lp_r = logp_re(state_space, Ti, sigsq, gnorm_r, data, TP, m, normals, R_all,
-      logZvec_r, meanvec_r)
-    
-    lq_l = logq_re(Ti, denom, normals)
-    lq_r = lq_l
+    logprobdiff_l = logprobs(state_space, Ti, sigsq, gnorm_l, data, TP, m, normals, R_all,
+      logZvec_l, meanvec_l, denom_l)
+    logprobdiff_r = logprobs(state_space, Ti, sigsq, gnorm_r, data, TP, m, normals, R_all,
+      logZvec_r, meanvec_r, denom_r)
 
-    n_t_g = (lp_l - lq_l - lp_r + lq_r)/(2*epsilon)
+    n_t_g = (logprobdiff_l - logprobdiff_r)/(2*epsilon)
     change = n_t_g.mean(axis=1)
     return a_a_g[:,ix], change
 
@@ -1184,8 +1248,7 @@ def grad_check_sigsq_re(phi, alpha, sigsq, theta, data, Ti,
     epsilon = 1e-4
 
     R_all, E_all = RE_all(theta, data, TP, state_space, m, centers_x, centers_y)
-    normals = np.array([np.random.multivariate_normal(np.zeros(Ti),
-      np.eye(Ti), B) for i in range(m)])
+    normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
     meanvec, denom, gvec, gnorm = grad_terms_re(normals,
       phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m)
     logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals, meanvec, denom, impa, theta, data, M, TP,
@@ -1205,16 +1268,13 @@ def grad_check_sigsq_re(phi, alpha, sigsq, theta, data, Ti,
       meanvec_l, denom_l, impa, theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
     logZvec_r, glogZ_theta_r, glogZ_alpha_r, glogZ_sigsq_r, glogZ_phi_r = logZ_re(normals,
       meanvec_r, denom_r, impa, theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
-
-    lp_l = logp_re(state_space, Ti, left, gnorm_l, data, TP, m, normals, R_all,
-      logZvec_l, meanvec_l)
-    lp_r = logp_re(state_space, Ti, right, gnorm_r, data, TP, m, normals, R_all,
-      logZvec_r, meanvec_r)
     
-    lq_l = logq_re(Ti, denom_l, normals)
-    lq_r = logq_re(Ti, denom_r, normals)
+    logprobdiff_l = logprobs(state_space, Ti, sigsq, gnorm_l, data, TP, m, normals, R_all,
+      logZvec_l, meanvec_l, denom_l)
+    logprobdiff_r = logprobs(state_space, Ti, sigsq, gnorm_r, data, TP, m, normals, R_all,
+      logZvec_r, meanvec_r, denom_r)
 
-    n_t_g = (lp_l - lq_l - lp_r + lq_r)/(2*epsilon)
+    n_t_g = (logprobdiff_l - logprobdiff_r)/(2*epsilon)
     change = n_t_g.mean(axis=1)
     return a_s_g, change
 
@@ -1230,7 +1290,7 @@ def grad_check_theta_re(phi, alpha, sigsq, theta, data, Ti,
     epsilon = 1e-4
 
     R_all, E_all = RE_all(theta, data, TP, state_space, m, centers_x, centers_y)
-    normals = np.array([np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), B) for i in range(m)])
+    normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
     meanvec, denom, gvec, gnorm = grad_terms_re(normals,
       phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m)
 
@@ -1254,15 +1314,12 @@ def grad_check_theta_re(phi, alpha, sigsq, theta, data, Ti,
     logZvec_r, glogZ_theta_r, glogZ_alpha_r, glogZ_sigsq_r, glogZ_phi_r = logZ_re(normals,
       meanvec_r, denom_r, impa, right, data, M, TP, R_all_r, E_all_r, action_space, centers_x, centers_y)
 
-    lp_l = logp_re(state_space, Ti, sigsq, gnorm_l, data, TP, m, normals, R_all_l,
-      logZvec_l, meanvec_l)
-    lp_r = logp_re(state_space, Ti, sigsq, gnorm_r, data, TP, m, normals, R_all_r,
-      logZvec_r, meanvec_r)
-    
-    lq_l = logq_re(Ti, denom, normals)
-    lq_r = lq_l
+    logprobdiff_l = logprobs(state_space, Ti, sigsq, gnorm_l, data, TP, m, normals, R_all,
+      logZvec_l, meanvec_l, denom_l)
+    logprobdiff_r = logprobs(state_space, Ti, sigsq, gnorm_r, data, TP, m, normals, R_all,
+      logZvec_r, meanvec_r, denom_r)
 
-    n_t_g = (lp_l - lq_l - lp_r + lq_r)/(2*epsilon)
+    n_t_g = (logprobdiff_l - logprobdiff_r)/(2*epsilon)
     change = (n_t_g.mean(axis=1)).sum()
     return a_t_g[ix], change
 
