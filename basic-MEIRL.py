@@ -946,7 +946,7 @@ def logZ_det(beta, impa, theta, data, M, TP, R_all, E_all, action_space,
     return logZvec, glogZ_theta, glogZ_alpha# m x N; Not averaged over beta!
 
 def alpha_grad_det(glogZ_alpha, R_all, E_all):
-    return -glogZ_alpha + np.einsum('ijk,ik->ij', R_all, E_all)
+    return -glogZ_alpha + np.einsum('ijk,ik->ij', E_all, R_all)
 
 def theta_grad_det(data, beta, state_space, glogZ_theta, centers_x, centers_y):
     gradR = grad_lin_rew(data, state_space, centers_x, centers_y) # m x d x Ti 
@@ -966,8 +966,13 @@ def y_t_nest_unif(theta, theta_m, beta, beta_m, t):
     return (theta - const*(theta - theta_m),
             beta - const*(beta - beta_m))
 
-def MEIRL_det(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, y_t, update, centers_x, centers_y):
+def loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec):
+    logT = np.log(rho(state_space)) + np.sum(np.log(traj_TP(data, TP, Ti, m)), axis=1)
+    return -logZvec + logT + np.einsum('ij,ij->i', beta, R_all)
+
+def MEIRL_det(theta, alpha, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, reps, y_t, update, centers_x,
+         centers_y, plot=True):
     '''
     Need the expert trajectories
 
@@ -996,54 +1001,41 @@ def MEIRL_det(theta, beta, traj_data, TP, state_space,
             
             data = np.array(traj_data[n]) # m x 2 x Ti
             R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
-            beta = np.einsum('ij,ijk->ik', alpha, E_all)
+            beta = np.einsum('ij,ijk->ik', y_alpha, E_all)
             
             logZvec, glogZ_theta, glogZ_alpha = logZ_det(beta,
-              impa, theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
+              impa, y_theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
           
-            loglikelihood = 
-            #logprobdiff = logprobs(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
-            #  logZvec, meanvec, denom).mean(axis=1).sum()
-            lik.append(logprobdiff)
-            #print(lp - lq)
+            loglikelihood = loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec).sum()
+            lik.append(loglikelihood)
               
-            g_phi = phi_grad_re(y_phi, m, Ti, normals, denom, y_sigsq, glogZ_phi)
-            g_theta = theta_grad_re(glogZ_theta, data, state_space, R_all, E_all,
-              y_sigsq, y_alpha, centers_x, centers_y)
-            g_alpha = alpha_grad_re(glogZ_alpha, E_all, R_all)
-            g_sigsq = sigsq_grad_re(glogZ_sigsq, normals, Ti, y_sigsq, gnorm, denom,
-              R_all, gvec)
+            g_theta = theta_grad_det(data, beta, state_space, glogZ_theta, centers_x, centers_y)
+            g_alpha = alpha_grad_det(glogZ_alpha, R_all, E_all)
           
-            phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
-            phi, theta, alpha, sigsq = update(y_phi, y_theta, y_alpha, y_sigsq, g_phi,
-              g_theta, g_alpha, g_sigsq, learn_rate)
+            theta_m, alpha_m, = theta, alpha
+            theta = y_theta + learn_rate*g_theta
+            alpha = y_alpha + learn_rate*g_alpha
             
             mult = (tm - 1)/t
-            y_phi = phi + mult*(phi - phi_m)
             y_theta = theta + mult*(theta - theta_m)
             y_alpha = alpha + mult*(alpha - alpha_m)
-            y_sigsq = sigsq + mult*(sigsq - sigsq_m)
             
             learn_rate *= 0.99
             tm = t
             
-            if logprobdiff > best:
-                best = logprobdiff
-                best_phi = y_phi.copy()
+            if loglikelihood > best:
+                best = loglikelihood
                 best_theta = y_theta.copy()
                 best_alpha = y_alpha.copy()
-                best_sigsq = y_sigsq.copy()
-            elif logprobdiff < last_lik:
-                y_phi = phi.copy()
+            elif loglikelihood < last_lik:
                 y_theta = theta.copy()
                 y_alpha = alpha.copy()
-                y_sigsq = sigsq.copy()
                 tm = 1
                 
-            last_lik = logprobdiff
+            last_lik = loglikelihood
     if plot:
         plt.plot(lik)
-    return best_phi, best_theta, best_alpha, best_sigsq
+    return best_theta, best_alpha
 
 def MEIRL_unif(theta, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, y_t, update, centers_x, centers_y):
@@ -1184,6 +1176,9 @@ phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = ann_AEVB(theta, alpha, si
 
 phi_star_b, theta_star_b, alpha_star_b, sigsq_star_b = AEVB(theta, alpha, sigsq, phi, boltz_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 3, y_t_nest, SGD)
+theta_star_d, alpha_star_d = MEIRL_det(theta, alpha, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 3, y_t_nest, SGD, centers_x,
+         centers_y)
 
 phi_star_AR, theta_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 3, y_t_nest, SGD)
