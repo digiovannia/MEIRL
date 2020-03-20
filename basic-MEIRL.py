@@ -11,21 +11,6 @@ direction, stays in place.
 Actions: 0 = up, 1 = right, 2 = down, 3 = left
 '''
 
-# Global params
-D=16 #8 #6
-MOVE_NOISE = 0.05
-INTERCEPT_ETA = 15#10
-INTERCEPT_REW = 1
-WEIGHT = 2
-RESCALE = 1/6
-RESET = 20
-M = 20 # number of actions used for importance sampling
-N = 50 # number of trajectories per expert
-Ti = 50 # length of trajectory
-B = 50#100 # number of betas/normals sampled for expectation
-Q_ITERS = 50000
-learn_rate = 0.0001
-
 
 def manh_dist(p1, p2):
     return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
@@ -494,15 +479,21 @@ def AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
     y_theta = theta.copy()
     y_alpha = alpha.copy()
     y_sigsq = sigsq.copy()
-    t = 1
+    best = -np.inf
+    best_phi = phi_m.copy()
+    best_theta = theta_m.copy()
+    best_alpha = alpha_m.copy()
+    best_sigsq = sigsq_m.copy()
+    tm = 1
+    last_lpd = -np.inf
     # maybe don't need to resample normals every time? testing this out
     normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
     # while error > eps:
     for _ in range(reps):
         permut = list(np.random.permutation(range(N)))
         for n in permut:
-            #y_phi, y_theta, y_alpha, y_sigsq = y_t(phi, phi_m, theta, theta_m,
-            #  alpha, alpha_m, sigsq, sigsq_m, t)
+            t = 1/2*(1 + np.sqrt(1 + 4*tm**2))
+            
             data = np.array(traj_data[n]) # m x 2 x Ti
             R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
             meanvec, denom, gvec, gnorm = grad_terms_re(normals,
@@ -526,11 +517,32 @@ def AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
             phi, theta, alpha, sigsq = update(y_phi, y_theta, y_alpha, y_sigsq, g_phi,
               g_theta, g_alpha, g_sigsq, learn_rate)
             
+            mult = (tm - 1)/t
+            y_phi = phi + mult*(phi - phi_m)
+            y_theta = theta + mult*(theta - theta_m)
+            y_alpha = alpha + mult*(alpha - alpha_m)
+            y_sigsq = sigsq + mult*(sigsq - sigsq_m)
+            
             learn_rate *= 0.99
-            t += 1
+            tm = t
+            
+            if logprobdiff > best:
+                best = logprobdiff
+                best_phi = y_phi.copy()
+                best_theta = y_theta.copy()
+                best_alpha = y_alpha.copy()
+                best_sigsq = y_sigsq.copy()
+            elif logprobdiff < last_lpd:
+                y_phi = phi.copy()
+                y_theta = theta.copy()
+                y_alpha = alpha.copy()
+                y_sigsq = sigsq.copy()
+                tm = 1
+                
+            last_lpd = logprobdiff
     if plot:
         plt.plot(elbo)
-    return phi, theta, alpha, sigsq
+    return best_phi, best_theta, best_alpha, best_sigsq
 
 def ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, y_t, update,
@@ -612,7 +624,7 @@ def ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
                   size=theta.shape)
                 alpha += np.random.normal(scale=2*np.max(np.abs(alpha)),
                   size=alpha.shape)
-                sigsq += np.random.normal(scale=2*np.max(sigsq),
+                sigsq += np.random.normal(scale=2*np.max(np.abs(sigsq)),
                   size=sigsq.shape)
                 sigsq = np.maximum(sigsq, 0.01)
                 time_since_best = 0
@@ -958,6 +970,21 @@ def MEIRL_unif(theta, beta, traj_data, TP, state_space,
 #np.random.seed(1)
 np.random.seed(2)
 
+# Global params
+D=16 #8 #6
+MOVE_NOISE = 0.05
+INTERCEPT_ETA = 3#25#15#10
+INTERCEPT_REW = -5
+WEIGHT = 0.2
+RESCALE = 1
+RESET = 20
+M = 20 # number of actions used for importance sampling
+N = 500 # number of trajectories per expert
+Ti = 20 # length of trajectory
+B = 50#100 # number of betas/normals sampled for expectation
+Q_ITERS = 50000
+learn_rate = 0.0001
+
 '''
 # Used in second wave of experiments, when D = 8
 centers_x = [0, D-2, 3, D-1]
@@ -1042,6 +1069,9 @@ phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = ann_AEVB(theta, alpha, si
 phi_star_b, theta_star_b, alpha_star_b, sigsq_star_b = AEVB(theta, alpha, sigsq, phi, boltz_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 3, y_t_nest, SGD)
 
+phi_star_AR, theta_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 3, y_t_nest, SGD)
+
 evaluate(10, opt_policy, 50, state_space, rewards, theta, init_policy,
              init_Q, centers_x, centers_y)
 
@@ -1095,6 +1125,9 @@ true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform_init(theta, alpha, sigsq, phi
 # maybe the problem is just intrinsically hard to the extent that the agent
 # has to infer which combination of expert-wrongness-in-which-locations and
 # true reward is correct. This is pretty nontrivial - could a human even do this?
+
+# maybe the difficulty especially lies with the fact that beta can be negative,
+# so the experts can in some states act exactly anti-optimally
 
 # works p well even under misspecification for D = 8
 # doesn't really work on D = 16 grid
