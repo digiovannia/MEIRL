@@ -833,6 +833,37 @@ def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
         unif_total.append(np.sum(est_rew))
     return true_total, AEVB_total, unif_total
 
+def evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
+                        state_space, action_space, rewards, init_policy,
+                        init_Q, J, B, m, M, Ti, learn_rate, traj_data,
+                        centers_x, centers_y):
+    true_rew = cumulative_reward(reps, policy, T, state_space, rewards)
+    plt.plot(np.cumsum(true_rew), color='b') 
+    true_total = np.sum(true_rew)
+    AEVB_total = []
+    det_total = []
+    for _ in range(J):
+        theta_star = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 5, y_t_nest, SGD, plot=False)[1]
+        reward_est = lin_rew_func(theta_star, state_space, centers_x, centers_y)
+        est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
+          action_space, reward_est, init_policy, init_Q)[0]
+        est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
+        plt.plot(np.cumsum(est_rew), color='r')
+        AEVB_total.append(np.sum(est_rew))
+        
+        theta_star = MEIRL_det(theta, alpha, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 5, y_t_nest_unif, SGD_unif,
+         centers_x, centers_y, plot=False)[0]
+        reward_est = lin_rew_func(np.random.normal(size=d), state_space,
+                                  centers_x, centers_y)
+        est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
+          action_space, reward_est, init_policy, init_Q)[0]
+        est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
+        plt.plot(np.cumsum(est_rew), color='g')
+        det_total.append(np.sum(est_rew))
+    return true_total, AEVB_total, det_total
+
 def evaluate_vs_uniform_init(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
                         state_space, action_space, rewards, init_policy,
                         init_Q, J, B, m, M, Ti, learn_rate, traj_data,
@@ -1078,10 +1109,10 @@ def MEIRL_unif(theta, beta, traj_data, TP, state_space,
 np.random.seed(2)
 
 # Global params
-D=8#16 #8 #6
+D=16 #8 #6
 MOVE_NOISE = 0.05
-#INTERCEPT_ETA = 3 # best for D=16
-INTERCEPT_ETA = 1.5
+INTERCEPT_ETA = 3 # best for D=16
+#INTERCEPT_ETA = 1.5
 INTERCEPT_REW = -5
 WEIGHT = 0.2
 RESCALE = 1
@@ -1203,6 +1234,10 @@ true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform(theta, alpha, sigsq, phi, bet
                         state_space, action_space, rewards, init_policy,
                         init_Q, 30, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y)
 # Using AR_AEVB as the inner loop, this works p well on D=8
+
+true_tot, AEVB_tot, unif_tot = evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, 5, opt_policy, 30,
+                        state_space, action_space, rewards, init_policy,
+                        init_Q, 30, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y)
 
 true_tot_b, AEVB_tot_b, unif_tot_b = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 5, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
