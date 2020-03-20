@@ -194,8 +194,8 @@ may want to randomly generate a bunch of these
 
 def arr_radial(s, c):
     #return np.exp(-5*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
-#    return RESCALE*np.exp(-2*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
-    return RESCALE*np.exp(-0.5*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
+    return RESCALE*np.exp(-2*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
+#    return RESCALE*np.exp(-0.5*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
 
 def psi_all_states(state_space, centers_x, centers_y):
     # d x D**2
@@ -813,7 +813,7 @@ def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
     AEVB_total = []
     unif_total = []
     for _ in range(J):
-        theta_star = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+        theta_star = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 5, y_t_nest, SGD, plot=False)[1]
         reward_est = lin_rew_func(theta_star, state_space, centers_x, centers_y)
         est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
@@ -903,11 +903,6 @@ def logZ_unif(beta, impa, theta, data, M, TP, action_space, centers_x, centers_y
     return logZvec, glogZ_theta, glogZ_beta # m x N; Not averaged over beta!
 
 def beta_grad_unif(glogZ_beta, R_all):
-    '''
-    Output m x 1
-
-    Feasible!
-    '''
     return -glogZ_beta + R_all.sum(axis=1)
 
 def theta_grad_unif(data, beta, state_space, glogZ_theta, centers_x, centers_y):
@@ -916,6 +911,47 @@ def theta_grad_unif(data, beta, state_space, glogZ_theta, centers_x, centers_y):
     '''
     gradR = grad_lin_rew(data, state_space, centers_x, centers_y) # m x d x Ti 
     return -glogZ_theta + (beta[:,None,None]*gradR).sum(axis=2).sum(axis=0) # each term is quite large
+
+def logZ_det(beta, impa, theta, data, M, TP, R_all, E_all, action_space,
+             centers_x, centers_y):
+    '''
+    Importance sampling approximation of logZ
+    and grad logZ
+    '''
+    reward_est = lin_rew_func(theta, state_space, centers_x, centers_y)
+
+    R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
+                      imp_samp_data(data, impa, j, m, Ti).astype(int),
+                      TP, state_space) for j in range(M)]), 0, 1)
+    lst = []
+    for j in range(M):
+        newdata = imp_samp_data(data, impa, j, m, Ti).astype(int)
+        feat_expect = grad_lin_rew(newdata, state_space, centers_x, centers_y)
+        lst.append(feat_expect)
+    gradR_Z = np.swapaxes(np.array(lst), 0, 1)
+    
+    expo = np.exp(beta[:,None,:]*R_Z)
+    volA = len(action_space) # m x N x Ti
+    lvec = np.log(volA*np.mean(expo,axis=1)) # for all times
+    logZvec = lvec.sum(axis=1)
+
+    num_t = expo[:,:,None,:]*beta[:,None,None,:]*gradR_Z
+    num_a = np.einsum('ijk,ilk->ilk', expo*R_Z, E_all) #expo*R_Z
+    numsum_t = num_t.sum(axis=1)
+    den = expo.sum(axis=1)
+    glogZ_theta = ((numsum_t/den[:,None,:]).sum(axis=2)).sum(axis=0)
+    glogZ_alpha = (num_a/den[:,None,:]).sum(axis=2)
+    # This appears to approximate the true logZ for the
+    # grid world with 4 actions very well!
+    return logZvec, glogZ_theta, glogZ_alpha# m x N; Not averaged over beta!
+
+def alpha_grad_det(glogZ_alpha, R_all, E_all):
+    return -glogZ_alpha + np.einsum('ijk,ik->ij', R_all, E_all)
+
+def theta_grad_det(data, beta, state_space, glogZ_theta, centers_x, centers_y):
+    gradR = grad_lin_rew(data, state_space, centers_x, centers_y) # m x d x Ti 
+    return -glogZ_theta + np.einsum('ij,ikj->k', beta, gradR)
+   #(beta[:,None,:]*gradR).sum(axis=2).sum(axis=0) # each term is quite large
 
 def SGD_unif(theta, beta, g_theta, g_beta, learn_rate):
     theta = theta + learn_rate*g_theta
@@ -929,6 +965,85 @@ def y_t_nest_unif(theta, theta_m, beta, beta_m, t):
     const = (t-1)/(t+2)
     return (theta - const*(theta - theta_m),
             beta - const*(beta - beta_m))
+
+def MEIRL_det(theta, beta, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, reps, y_t, update, centers_x, centers_y):
+    '''
+    Need the expert trajectories
+
+    y_t is the function used to define modified iterate for Nesterov, if
+    applicable
+    
+    update is e.g. SGD or Adam
+    '''
+    impa = uniform_action_sample(action_space, M)
+    N = len(traj_data)
+    lik = []
+    theta_m = np.zeros_like(theta)
+    alpha_m = np.zeros_like(alpha)
+    y_theta = theta.copy()
+    y_alpha = alpha.copy()
+    best = -np.inf
+    best_theta = theta_m.copy()
+    best_alpha = alpha_m.copy()
+    tm = 1
+    last_lik = -np.inf
+    # while error > eps:
+    for _ in range(reps):
+        permut = list(np.random.permutation(range(N)))
+        for n in permut:
+            t = 1/2*(1 + np.sqrt(1 + 4*tm**2))
+            
+            data = np.array(traj_data[n]) # m x 2 x Ti
+            R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
+            beta = np.einsum('ij,ijk->ik', alpha, E_all)
+            
+            logZvec, glogZ_theta, glogZ_alpha = logZ_det(beta,
+              impa, theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
+          
+            loglikelihood = 
+            #logprobdiff = logprobs(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
+            #  logZvec, meanvec, denom).mean(axis=1).sum()
+            lik.append(logprobdiff)
+            #print(lp - lq)
+              
+            g_phi = phi_grad_re(y_phi, m, Ti, normals, denom, y_sigsq, glogZ_phi)
+            g_theta = theta_grad_re(glogZ_theta, data, state_space, R_all, E_all,
+              y_sigsq, y_alpha, centers_x, centers_y)
+            g_alpha = alpha_grad_re(glogZ_alpha, E_all, R_all)
+            g_sigsq = sigsq_grad_re(glogZ_sigsq, normals, Ti, y_sigsq, gnorm, denom,
+              R_all, gvec)
+          
+            phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
+            phi, theta, alpha, sigsq = update(y_phi, y_theta, y_alpha, y_sigsq, g_phi,
+              g_theta, g_alpha, g_sigsq, learn_rate)
+            
+            mult = (tm - 1)/t
+            y_phi = phi + mult*(phi - phi_m)
+            y_theta = theta + mult*(theta - theta_m)
+            y_alpha = alpha + mult*(alpha - alpha_m)
+            y_sigsq = sigsq + mult*(sigsq - sigsq_m)
+            
+            learn_rate *= 0.99
+            tm = t
+            
+            if logprobdiff > best:
+                best = logprobdiff
+                best_phi = y_phi.copy()
+                best_theta = y_theta.copy()
+                best_alpha = y_alpha.copy()
+                best_sigsq = y_sigsq.copy()
+            elif logprobdiff < last_lik:
+                y_phi = phi.copy()
+                y_theta = theta.copy()
+                y_alpha = alpha.copy()
+                y_sigsq = sigsq.copy()
+                tm = 1
+                
+            last_lik = logprobdiff
+    if plot:
+        plt.plot(lik)
+    return best_phi, best_theta, best_alpha, best_sigsq
 
 def MEIRL_unif(theta, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, y_t, update, centers_x, centers_y):
@@ -971,9 +1086,10 @@ def MEIRL_unif(theta, beta, traj_data, TP, state_space,
 np.random.seed(2)
 
 # Global params
-D=16 #8 #6
+D=8#16 #8 #6
 MOVE_NOISE = 0.05
-INTERCEPT_ETA = 3#25#15#10
+#INTERCEPT_ETA = 3 # best for D=16
+INTERCEPT_ETA = 1.5
 INTERCEPT_REW = -5
 WEIGHT = 0.2
 RESCALE = 1
@@ -982,7 +1098,7 @@ M = 20 # number of actions used for importance sampling
 N = 500 # number of trajectories per expert
 Ti = 20 # length of trajectory
 B = 50#100 # number of betas/normals sampled for expectation
-Q_ITERS = 50000
+Q_ITERS = 30000#50000
 learn_rate = 0.0001
 
 '''
@@ -1032,7 +1148,7 @@ np.random.seed(1)
 init_det_policy = np.random.choice([0,1,2,3], size=(D,D))
 init_policy = stoch_policy(init_det_policy, action_space)
 init_Q = np.random.rand(D,D,4)
-opt_policy, Q = Qlearn(0.5, 0.8, 0.1, 50000, 20, state_space,
+opt_policy, Q = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
           action_space, rewards, init_policy, init_Q)
           # This seems to converge robustly to optimal policy,
           # although Q values have some variance in states where
@@ -1088,11 +1204,12 @@ Testing against constant-beta model
 theta_s, beta_s = MEIRL_unif(theta, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 50, y_t_nest_unif, SGD_unif, centers_x, centers_y)
 
-true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 50,
+true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 5, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
                         init_Q, 30, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y)
+# Using AR_AEVB as the inner loop, this works p well on D=8
 
-true_tot_b, AEVB_tot_b, unif_tot_b = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 50,
+true_tot_b, AEVB_tot_b, unif_tot_b = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 5, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
                         init_Q, 30, B, m, M, Ti, learn_rate, boltz_data, centers_x, centers_y)
 # Works robustly well! This is on data where the demonstrators are Q-softmaxing,
