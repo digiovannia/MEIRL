@@ -1145,6 +1145,7 @@ def MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
               impa, y_theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
           
             loglikelihood = loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec).sum()
+            # appears not to be maximized at true theta/alpha, why?
             lik.append(loglikelihood)
               
             g_theta = theta_grad_det(data, beta, state_space, glogZ_theta, centers_x, centers_y)
@@ -1281,7 +1282,7 @@ def MEIRL_unif(theta, beta, traj_data, TP, state_space,
 
 # Initializations
 #np.random.seed(1)
-np.random.seed(2)
+np.random.seed(10)
 
 # Global params
 D=16 #8 #6x
@@ -1350,15 +1351,20 @@ sigsq3 = 25
 sigsq4 = 25
 '''
 
+'''
 sigsq1 = 2
 sigsq2 = 2
 sigsq3 = 2
 sigsq4 = 2
+'''
+sigsq1 = 0.01
+sigsq2 = 0.01
+sigsq3 = 0.01
+sigsq4 = 0.01
 
 ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4])
 ex_sigsqs = np.array([sigsq1, sigsq2, sigsq3, sigsq4])
 
-np.random.seed(1)
 init_det_policy = np.random.choice([0,1,2,3], size=(D,D))
 init_policy = stoch_policy(init_det_policy, action_space)
 init_Q = np.random.rand(D,D,4)
@@ -1387,21 +1393,50 @@ boltz_data = make_data_Q(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, acti
 # second index is expert
 # third is states, actions
 
+#regular
 phi_star, theta_star, alpha_star, sigsq_star = ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 3, y_t_nest, SGD)
+         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, SGD)
+phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, SGD)
+theta_star_d, alpha_star_d = MEIRL_det(theta, alpha, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, SGD, centers_x,
+         centers_y)
+theta_star_p, alpha_star_p = MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, SGD, centers_x,
+         centers_y)
+phi_star_AR, theta_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, SGD)
+theta_star_u, beta_star_u = MEIRL_unif(theta, beta, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest_unif, SGD_unif, centers_x, centers_y)
+# these all seem to do terribly on seed 10, except when sigsq is 0.01 rather than 2 -
+# then MEIRL_det_pos works quite well 
+
+#boltz - FIX THIS
+phi_star_b, theta_star_b, alpha_star_b, sigsq_star_b = ann_AEVB(theta, alpha, sigsq, phi, boltz_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, SGD)
+phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, SGD)
+theta_star_d, alpha_star_d = MEIRL_det(theta, alpha, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, SGD, centers_x,
+         centers_y)
+theta_star_p, alpha_star_p = MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, SGD, centers_x,
+         centers_y)
+phi_star_AR, theta_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, SGD)
+theta_star_u, beta_star_u = MEIRL_unif(theta, beta, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest_unif, SGD_unif, centers_x, centers_y)
 
 # see_trajectory(rewards, np.array(traj_data[0])[0,0])
 
 # this works p well, when true sigsq is set to 2 and the trajectories come
 # from the truly specified model
-phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 20, y_t_nest, SGD)
 dumb_data = make_data_myopic(alpha_star_2, sigsq_star_2, lin_rew_func(theta_star_2,
                             state_space, centers_x, centers_y), N, Ti, state_space, action_space,
                             init_state_sample, TP, m)
 
 phi_star_b, theta_star_b, alpha_star_b, sigsq_star_b = AEVB(theta, alpha, sigsq, phi, boltz_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 3, y_t_nest, SGD)
+         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, SGD)
 theta_star_d, alpha_star_d = MEIRL_det(theta, alpha, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, SGD, centers_x,
          centers_y)
