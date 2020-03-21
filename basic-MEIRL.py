@@ -146,8 +146,17 @@ def Qlearn(rate, gam, eps, K, T, state_space, action_space,
     return policy, Q
 
 def eta(st):
-    return np.array([-abs(st[0]-1), -abs(st[1]-1), -abs(st[0]-(D-2)),
-                     -abs(st[1]-(D-2)), INTERCEPT_ETA])
+    '''
+    return np.array([abs(st[0]-1),
+                     abs(st[1]-1),
+                     abs(st[0]-(D-2)),
+                     abs(st[1]-(D-2)), INTERCEPT_ETA])
+    '''
+    return np.array([RESCALE*np.exp(-ETA_COEF*((st[0]-1)**2+(st[1]-1)**2)),
+                     RESCALE*np.exp(-ETA_COEF*((st[0]-(D-2))**2+(st[1]-(D-2))**2)),
+                     RESCALE*np.exp(-ETA_COEF*((st[0]-1)**2+(st[1]-(D-2))**2)),
+                     RESCALE*np.exp(-ETA_COEF*((st[0]-(D-2))**2+(st[1]-1)**2)),
+                     INTERCEPT_ETA])
 
 def mu(s, alpha):
     return np.dot(eta(s), alpha)
@@ -192,28 +201,14 @@ CHANGED THE REWARD FUNC!
 may want to randomly generate a bunch of these
 '''
 
-def arr_radial(s, c):
+def arr_radial(s, c, coef):
     #return np.exp(-5*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
  #   return RESCALE*np.exp(-2*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
-    return RESCALE*np.exp(-0.1*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
+    return RESCALE*np.exp(-coef*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
 
 def psi_all_states(state_space, centers_x, centers_y):
     # d x D**2
-    '''
-    return np.array([arr_radial(state_space, (0,0)),
-                    arr_radial(state_space,(D-1,D-1)),
-                    arr_radial(state_space, (0,D-1)),
-                    arr_radial(state_space, (D-1,0)),
-                     INTERCEPT_REW*np.ones(len(state_space))])
-    '''
-    '''
-    return np.array([arr_radial(state_space, (0,2)),
-                    arr_radial(state_space,(D-2,D-1)),
-                    arr_radial(state_space, (3,D-2)),
-                    arr_radial(state_space, (D-1,0)),
-                     INTERCEPT_REW*np.ones(len(state_space))])
-    '''
-    lst = list([arr_radial(state_space, (centers_x[i],centers_y[i])) for i in range(len(centers_x))])
+    lst = list([arr_radial(state_space, (centers_x[i],centers_y[i]), COEF) for i in range(len(centers_x))])
     lst.append(INTERCEPT_REW*np.ones(len(state_space)))
     return np.array(lst)
 
@@ -349,10 +344,27 @@ def make_data_myopic(alpha, sigsqs, reward_str, N, Ti, state_space, action_space
     return trajectories 
 
 def eta_mat(data):
-    arr = np.array([-abs(data[:,0,:] // D - 1),
-                    -abs(data[:,0,:] % D - 1),
-                    -abs(data[:,0,:] // D - (D-2)),
-                    -abs(data[:,0,:] % D - (D-2)),
+    '''
+    arr = np.array([NUMER/(1+abs(data[:,0,:] // D - 1)),
+                    NUMER/(1+abs(data[:,0,:] % D - 1)),
+                    NUMER/(1+abs(data[:,0,:] // D - (D-2))),
+                    NUMER/(1+abs(data[:,0,:] % D - (D-2))),
+                    INTERCEPT_ETA*np.ones(data[:,0,:].shape)])
+            
+RESCALE*np.exp(-ETA_COEF*((st[0]-1)**2+(st[1]-1)**2)),
+                     RESCALE*np.exp(-ETA_COEF*((st[0]-(D-2))**2+(st[1]-(D-2))**2)),
+                     RESCALE*np.exp(-ETA_COEF*((st[0]-1)**2+(st[1]-(D-2))**2)),
+                     RESCALE*np.exp(-ETA_COEF*((st[0]-(D-2))**2+(st[1]-1)**2))
+                     
+        
+    
+    '''
+    data_x = data[:,0,:] // D
+    data_y = data[:,0,:] % D
+    arr = np.array([RESCALE*np.exp(-ETA_COEF*((data_x-1)**2+(data_y-1)**2)),
+                    RESCALE*np.exp(-ETA_COEF*((data_x-(D-2))**2+(data_y-(D-2))**2)),
+                    RESCALE*np.exp(-ETA_COEF*((data_x-1)**2+(data_y-(D-2))**2)),
+                    RESCALE*np.exp(-ETA_COEF*((data_x-(D-2))**2+(data_y-1)**2)),
                     INTERCEPT_ETA*np.ones(data[:,0,:].shape)])
 
     return np.swapaxes(arr, 0, 1)
@@ -833,7 +845,7 @@ def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
         unif_total.append(np.sum(est_rew))
     return true_total, AEVB_total, unif_total
 
-def evaluate_det_vs_unif(lam, theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
+def evaluate_det_vs_unif(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
                         state_space, action_space, rewards, init_policy,
                         init_Q, J, B, m, M, Ti, learn_rate, traj_data,
                         centers_x, centers_y):
@@ -843,7 +855,7 @@ def evaluate_det_vs_unif(lam, theta, alpha, sigsq, phi, beta, TP, reps, policy, 
     det_total = []
     unif_total = []
     for _ in range(J):
-        theta_star = MEIRL_det_reg(lam, theta, alpha, traj_data, TP, state_space,
+        theta_star = MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 5, y_t_nest_unif, SGD_unif,
          centers_x, centers_y, plot=False)[0]
         reward_est = lin_rew_func(theta_star, state_space,
@@ -884,7 +896,10 @@ def evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
         plt.plot(np.cumsum(est_rew), color='r')
         AEVB_total.append(np.sum(est_rew))
         
-        theta_star = MEIRL_det(theta, alpha, traj_data, TP, state_space,
+        '''
+        Changing to MEIRL_det_pos here!
+        '''
+        theta_star = MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 5, y_t_nest_unif, SGD_unif,
          centers_x, centers_y, plot=False)[0]
         reward_est = lin_rew_func(theta_star, state_space,
@@ -1288,10 +1303,13 @@ INTERCEPT_ETA = 3 # best for D=16
 WEIGHT = 0.2
 '''
 # adjusting intercept and weight to give all-positive betas:
-INTERCEPT_ETA = 2.5
-WEIGHT = 0.1
+INTERCEPT_ETA = 0
+WEIGHT = 2
 RESCALE = 1
 RESET = 20
+NUMER = 0.05
+COEF = 0.1
+ETA_COEF = 0.01
 M = 20 # number of actions used for importance sampling
 N = 2000 # number of trajectories per expert
 Ti = 20 # length of trajectory
@@ -1319,10 +1337,16 @@ sns.heatmap(rewards)
 
 # Alpha vectors for the centers of the grid world
 # where each expert is closest to optimal.
+'''
 alpha1 = np.array([WEIGHT, WEIGHT, 0, 0, 1]) # (1,1)
 alpha2 = np.array([WEIGHT, 0, 0, WEIGHT, 1]) # (1,4)
 alpha3 = np.array([0, WEIGHT, WEIGHT, 0, 1]) # (4,1)
 alpha4 = np.array([0, 0, WEIGHT, WEIGHT, 1]) # (4,4)
+'''
+alpha1 = np.array([WEIGHT, 0, 0, 0, 1]) # (1,1)
+alpha2 = np.array([0, 0, WEIGHT, 0, 1]) # (1,4)
+alpha3 = np.array([0, 0, 0, WEIGHT, 1]) # (4,4)
+alpha4 = np.array([0, WEIGHT, 0, 0, 1]) # (4,1)
 p = alpha1.shape[0]
 d = D // 2 + 1
 m = 4
@@ -1413,9 +1437,14 @@ true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform(theta, alpha, sigsq, phi, bet
                         init_Q, 30, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y)
 # Using AR_AEVB as the inner loop, this works p well on D=8
 
-true_tot, AEVB_tot, unif_tot = evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, 5, opt_policy, 30,
+true_tot, AEVB_tot, det_tot = evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, 5, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
                         init_Q, 30, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y)
+
+true_tot, det_tot_p, unif_tot_p = evaluate_det_vs_unif(theta, alpha, sigsq, phi, beta, TP, 5, opt_policy, 30,
+                        state_space, action_space, rewards, init_policy,
+                        init_Q, 30, B, m, M, Ti, learn_rate, traj_data,
+                        centers_x, centers_y)
 
 true_tot_b, AEVB_tot_b, unif_tot_b = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 5, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
