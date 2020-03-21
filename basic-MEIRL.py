@@ -11,6 +11,7 @@ direction, stays in place.
 Actions: 0 = up, 1 = right, 2 = down, 3 = left
 '''
 
+### Helper functions
 
 def manh_dist(p1, p2):
     return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
@@ -26,7 +27,23 @@ def state_index(tup):
 def multi_state_index(states):
     return D*states[:,0]+states[:,1]
 
+def stoch_policy(det_policy, action_space):
+    '''
+    Turns an array of actions corresponding to a
+    deterministic policy into a "stochastic" policy
+    (1 on the action chosen, 0 else)
+    '''
+    x = np.repeat(range(D), D)
+    y = np.tile(range(D), D)
+    z = np.ravel(det_policy)
+    out = np.zeros((D,D,len(action_space)))
+    out[x,y,z] = 1
+    return out
+
 def transition(state_space, action_space):
+    '''
+    Creates transition dynamics tensor based on step rules of the grid world.
+    '''
     # 0 index = start state
     # 1 = action
     # 2 = next state
@@ -57,8 +74,7 @@ def transition(state_space, action_space):
 
 def grid_step(s, a):
     '''
-    Given current state s and action a, returns resulting
-    state.
+    Given current state s (in tuple form) and action a, returns resulting state.
     '''
     flip = np.random.rand()
     if flip < MOVE_NOISE:
@@ -66,14 +82,10 @@ def grid_step(s, a):
     new_state = s + act_to_coord(a)
     return np.minimum(np.maximum(new_state, 0), D-1)
 
-def episode(s,T,policy,rewards,step_func,a=-1):
+def episode(s,T,policy,rewards,a=-1):
     '''
-    Given any generic state, time horizon, policy, and
-    reward structure indexed by the state, generates an
-    episode starting from that state.
-
-    step_func defines how a resulting state is generated
-    from current state and action
+    Given any generic state, time horizon, policy, and reward structure indexed
+    by the state, generates an episode starting from that state.
     '''
     states = [s]
     if a < 0:
@@ -81,32 +93,17 @@ def episode(s,T,policy,rewards,step_func,a=-1):
     actions = [a]
     reward_list = [0]
     for _ in range(T-1):
-        s = step_func(s,a)
+        s = grid_step(s,a)
         states.append(s)
-        r = rewards[tuple(s)]
-        reward_list.append(r)
+        reward_list.append(rewards[tuple(s)])
         a = np.random.choice(action_space, p=policy[tuple(s)])
         actions.append(a)
     reward_list.append(rewards[tuple(s)])
     return np.array(states), actions, reward_list
 
-def stoch_policy(det_policy, action_space):
-    '''
-    Turns an array of actions corresponding to a
-    deterministic policy into a "stochastic" policy
-    (1 on the action chosen, 0 else)
-    '''
-    x = np.repeat(range(D), D)
-    y = np.tile(range(D), D)
-    z = np.ravel(det_policy)
-    out = np.zeros((D,D,len(action_space)))
-    out[x,y,z] = 1
-    return out
-
 def visualize_policy(rewards, policy):
     '''
-    Heatmap representing the input policy in the state
-    space with the input rewards.
+    Heatmap representing the input policy in the state space.
     '''
     pol = np.argmax(policy, axis=2)
     sns.heatmap(rewards)
@@ -400,7 +397,7 @@ def SGD(phi, theta, alpha, sigsq, g_phi, g_theta, g_alpha, g_sigsq, learn_rate):
     phi = phi + learn_rate*g_phi
     phi[:,1] = np.maximum(phi[:,1], 0.01)
     theta = theta + learn_rate*g_theta
-    alpha = alpha + learn_rate*g_alpha
+    alpha = np.maximum(alpha + learn_rate*g_alpha, 0)
     sigsq = np.maximum(sigsq + learn_rate*g_sigsq, 0.01)
     return phi, theta, alpha, sigsq
 
@@ -752,20 +749,11 @@ def theta_grad_re(glogZ_theta, data, state_space, R_all, E_all, sigsq, alpha,
     result = -glogZ_theta + np.einsum('ijk,ik->ij', gradR, X)[:,None,:]
     return np.sum(np.mean(result, axis=1), axis=0)
 
-'''
-TO DO:
-* make function that runs episodes with policy and
-  collects rewards
-* make function that trains a Q-learner on rewards
-  defined by a given theta and compare reward
-  gained by inferred theta vs true
-'''
-
 def total_reward(reps, policy, T, state_space, rewards):
     reward_list = []
     for _ in range(reps):
         s = state_space[np.random.choice(len(state_space))]
-        ret = np.sum(episode(s,T,policy,rewards,grid_step)[2]) #true reward
+        ret = np.sum(episode(s,T,policy,rewards)[2]) #true reward
         reward_list.append(ret)
     return reward_list
 
@@ -773,7 +761,7 @@ def cumulative_reward(reps, policy, T, state_space, rewards):
     reward_list = []
     for _ in range(reps):
         s = state_space[np.random.choice(len(state_space))]
-        ret = episode(s,T,policy,rewards,grid_step)[2] #true reward
+        ret = episode(s,T,policy,rewards)[2] #true reward
         reward_list.extend(ret)
     return reward_list
 
@@ -786,6 +774,7 @@ def evaluate(reps, policy, T, state_space, rewards, theta_est, init_policy,
     est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
     plt.plot(np.cumsum(true_rew), color='b')
     plt.plot(np.cumsum(est_rew), color='r')
+    return np.sum(true_rew), np.sum(est_rew)
 
 def evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
                         state_space, action_space, rewards, init_policy,
@@ -797,8 +786,8 @@ def evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
     AEVB_total = []
     random_total = []
     for _ in range(J):
-        theta_star = ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 5, y_t_nest, SGD, plot=False)[1]
+        theta_star = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, reps, y_t_nest, SGD, plot=False)[1]
         reward_est = lin_rew_func(theta_star, state_space, centers_x, centers_y)
         est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
           action_space, reward_est, init_policy, init_Q)[0]
@@ -856,18 +845,18 @@ def evaluate_det_vs_unif(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
     unif_total = []
     for _ in range(J):
         theta_star = MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 5, y_t_nest_unif, SGD_unif,
+         action_space, B, m, M, Ti, learn_rate, reps, y_t_nest_unif, SGD_unif,
          centers_x, centers_y, plot=False)[0]
         reward_est = lin_rew_func(theta_star, state_space,
                                   centers_x, centers_y)
         est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
           action_space, reward_est, init_policy, init_Q)[0]
         est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
-        plt.plot(np.cumsum(est_rew), color='g')
+        plt.plot(np.cumsum(est_rew), color='r')
         det_total.append(np.sum(est_rew))
 
         theta_star = MEIRL_unif(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 5, y_t_nest_unif, SGD_unif, centers_x, centers_y)[0]
+         action_space, B, m, M, Ti, learn_rate, reps, y_t_nest_unif, SGD_unif, centers_x, centers_y)[0]
         reward_est = lin_rew_func(theta_star, state_space,
                                   centers_x, centers_y)
         est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
@@ -1284,6 +1273,7 @@ def MEIRL_unif(theta, beta, traj_data, TP, state_space,
           
             theta_m, beta_m = theta, beta
             theta, beta = update(y_theta, y_beta, g_theta, g_beta, learn_rate)
+            beta = np.maximum(0, beta)
             
             learn_rate *= 0.99
             t += 1
@@ -1335,18 +1325,20 @@ rewards = lin_rew_func(true_theta, state_space, centers_x, centers_y)
 sns.heatmap(rewards)
 # Misspecified reward bases?
 
+def expert_alphas(m):
+    pass
+
 # Alpha vectors for the centers of the grid world
 # where each expert is closest to optimal.
-'''
-alpha1 = np.array([WEIGHT, WEIGHT, 0, 0, 1]) # (1,1)
-alpha2 = np.array([WEIGHT, 0, 0, WEIGHT, 1]) # (1,4)
-alpha3 = np.array([0, WEIGHT, WEIGHT, 0, 1]) # (4,1)
-alpha4 = np.array([0, 0, WEIGHT, WEIGHT, 1]) # (4,4)
-'''
-alpha1 = np.array([WEIGHT, 0, 0, 0, 1]) # (1,1)
+
+#alpha1 = np.array([WEIGHT, 0, 0, 0, 1]) # (1,1)
+#alpha4 = np.array([0, WEIGHT, 0, 0, 1]) # (4,1)
+
+
+alpha1 = np.array([0, WEIGHT, 0, 0, 1]) # (1,1)
 alpha2 = np.array([0, 0, WEIGHT, 0, 1]) # (1,4)
-alpha3 = np.array([0, 0, 0, WEIGHT, 1]) # (4,4)
-alpha4 = np.array([0, WEIGHT, 0, 0, 1]) # (4,1)
+alpha3 = np.array([0, WEIGHT, 0, 0, 1]) # (4,4)
+alpha4 = np.array([0, 0, WEIGHT, 0, 1])
 p = alpha1.shape[0]
 d = D // 2 + 1
 m = 4
@@ -1397,26 +1389,32 @@ boltz_data = make_data_Q(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, acti
 
 phi_star, theta_star, alpha_star, sigsq_star = ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 3, y_t_nest, SGD)
-dumb_data = make_data_myopic(alpha_star_2, sigsq_star_2, lin_rew_func(theta_star_2,
-                            state_space, centers_x, centers_y), N, Ti, state_space, action_space,
-                            init_state_sample, TP, m)
+
 # see_trajectory(rewards, np.array(traj_data[0])[0,0])
 
 # this works p well, when true sigsq is set to 2 and the trajectories come
 # from the truly specified model
 phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 20, y_t_nest, SGD)
+dumb_data = make_data_myopic(alpha_star_2, sigsq_star_2, lin_rew_func(theta_star_2,
+                            state_space, centers_x, centers_y), N, Ti, state_space, action_space,
+                            init_state_sample, TP, m)
 
 phi_star_b, theta_star_b, alpha_star_b, sigsq_star_b = AEVB(theta, alpha, sigsq, phi, boltz_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 3, y_t_nest, SGD)
 theta_star_d, alpha_star_d = MEIRL_det(theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 2, y_t_nest, SGD, centers_x,
+         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, SGD, centers_x,
          centers_y)
+theta_star_u, beta_star_u = MEIRL_unif(theta, beta, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest_unif, SGD_unif, centers_x, centers_y)
 
 phi_star_AR, theta_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 3, y_t_nest, SGD)
+         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, SGD)
 
 evaluate(10, opt_policy, 50, state_space, rewards, theta, init_policy,
+             init_Q, centers_x, centers_y)
+
+evaluate(5, opt_policy, 30, state_space, rewards, np.random.normal(size=d), init_policy,
              init_Q, centers_x, centers_y)
 
 evaluate(10, opt_policy, 50, state_space, rewards, theta_star, init_policy,
@@ -1430,29 +1428,29 @@ Testing against constant-beta model
 '''
 
 theta_s, beta_s = MEIRL_unif(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 2, y_t_nest_unif, SGD_unif, centers_x, centers_y)
+         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest_unif, SGD_unif, centers_x, centers_y)
 
-true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 5, opt_policy, 30,
+true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
                         init_Q, 30, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y)
 # Using AR_AEVB as the inner loop, this works p well on D=8
 
-true_tot, AEVB_tot, det_tot = evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, 5, opt_policy, 30,
+true_tot, AEVB_tot, det_tot = evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
                         init_Q, 30, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y)
 
-true_tot, det_tot_p, unif_tot_p = evaluate_det_vs_unif(theta, alpha, sigsq, phi, beta, TP, 5, opt_policy, 30,
+true_tot, det_tot_p, unif_tot_p = evaluate_det_vs_unif(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
                         init_Q, 30, B, m, M, Ti, learn_rate, traj_data,
                         centers_x, centers_y)
 
-true_tot_b, AEVB_tot_b, unif_tot_b = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 5, opt_policy, 30,
+true_tot_b, AEVB_tot_b, unif_tot_b = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
                         init_Q, 30, B, m, M, Ti, learn_rate, boltz_data, centers_x, centers_y)
 # Works robustly well! This is on data where the demonstrators are Q-softmaxing,
 # not next-step reward!
 
-true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform_init(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 20,
+true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform_init(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 20,
                         state_space, action_space, rewards, init_policy,
                         init_Q, 30, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y)
 # evidently sensitive to initialization, but maybe there's something principled
@@ -1482,11 +1480,15 @@ true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform_init(theta, alpha, sigsq, phi
 
 # maybe the difficulty especially lies with the fact that beta can be negative,
 # so the experts can in some states act exactly anti-optimally
+'''
+Update: tried restricting beta to be positive. Seems that the algo does decently
+well under this restriction, but so does the model where beta is treated as constant!
+'''
 
 # works p well even under misspecification for D = 8
 # doesn't really work on D = 16 grid
 
-tr_tot, AE_tot, ra_tot = evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, 10, opt_policy, 20,
+tr_tot, AE_tot, ra_tot = evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
                         init_Q, 30, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y)
 
