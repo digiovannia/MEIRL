@@ -146,8 +146,8 @@ def Qlearn(rate, gam, eps, K, T, state_space, action_space,
     return policy, Q
 
 def eta(st):
-    return np.array([abs(st[0]-1), abs(st[1]-1), abs(st[0]-(D-2)),
-                     abs(st[1]-(D-2)), INTERCEPT_ETA])
+    return np.array([-abs(st[0]-1), -abs(st[1]-1), -abs(st[0]-(D-2)),
+                     -abs(st[1]-(D-2)), INTERCEPT_ETA])
 
 def mu(s, alpha):
     return np.dot(eta(s), alpha)
@@ -194,8 +194,8 @@ may want to randomly generate a bunch of these
 
 def arr_radial(s, c):
     #return np.exp(-5*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
-    return RESCALE*np.exp(-2*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
-#    return RESCALE*np.exp(-0.5*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
+ #   return RESCALE*np.exp(-2*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
+    return RESCALE*np.exp(-0.1*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
 
 def psi_all_states(state_space, centers_x, centers_y):
     # d x D**2
@@ -349,10 +349,10 @@ def make_data_myopic(alpha, sigsqs, reward_str, N, Ti, state_space, action_space
     return trajectories 
 
 def eta_mat(data):
-    arr = np.array([abs(data[:,0,:] // D - 1),
-                    abs(data[:,0,:] % D - 1),
-                    abs(data[:,0,:] // D - (D-2)),
-                    abs(data[:,0,:] % D - (D-2)),
+    arr = np.array([-abs(data[:,0,:] // D - 1),
+                    -abs(data[:,0,:] % D - 1),
+                    -abs(data[:,0,:] // D - (D-2)),
+                    -abs(data[:,0,:] % D - (D-2)),
                     INTERCEPT_ETA*np.ones(data[:,0,:].shape)])
 
     return np.swapaxes(arr, 0, 1)
@@ -1104,6 +1104,73 @@ def MEIRL_det(theta, alpha, traj_data, TP, state_space,
         plt.plot(lik)
     return best_theta, best_alpha
 
+def MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, reps, y_t, update, centers_x,
+         centers_y, plot=True):
+    '''
+    Need the expert trajectories
+
+    y_t is the function used to define modified iterate for Nesterov, if
+    applicable
+    
+    update is e.g. SGD or Adam
+    '''
+    impa = uniform_action_sample(action_space, M)
+    N = len(traj_data)
+    lik = []
+    theta_m = np.zeros_like(theta)
+    alpha_m = np.zeros_like(alpha)
+    y_theta = theta.copy()
+    y_alpha = alpha.copy()
+    best = -np.inf
+    best_theta = theta_m.copy()
+    best_alpha = alpha_m.copy()
+    tm = 1
+    last_lik = -np.inf
+    # while error > eps:
+    for _ in range(reps):
+        permut = list(np.random.permutation(range(N)))
+        for n in permut:
+            t = 1/2*(1 + np.sqrt(1 + 4*tm**2))
+            
+            data = np.array(traj_data[n]) # m x 2 x Ti
+            R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
+            beta = np.einsum('ij,ijk->ik', y_alpha, E_all)
+            
+            logZvec, glogZ_theta, glogZ_alpha = logZ_det(beta,
+              impa, y_theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
+          
+            loglikelihood = loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec).sum()
+            lik.append(loglikelihood)
+              
+            g_theta = theta_grad_det(data, beta, state_space, glogZ_theta, centers_x, centers_y)
+            g_alpha = alpha_grad_det(glogZ_alpha, R_all, E_all)
+          
+            theta_m, alpha_m, = theta, alpha
+            theta = y_theta + learn_rate*g_theta
+            alpha = y_alpha + learn_rate*g_alpha
+            
+            mult = (tm - 1)/t
+            y_theta = theta + mult*(theta - theta_m)
+            y_alpha = np.maximum(alpha + mult*(alpha - alpha_m), 0)
+            
+            learn_rate *= 0.99
+            tm = t
+            
+            if loglikelihood > best:
+                best = loglikelihood
+                best_theta = y_theta.copy()
+                best_alpha = y_alpha.copy()
+            elif loglikelihood < last_lik:
+                y_theta = theta.copy()
+                y_alpha = alpha.copy()
+                tm = 1
+                
+            last_lik = loglikelihood
+    if plot:
+        plt.plot(lik)
+    return best_theta, best_alpha
+
 def MEIRL_det_reg(lam, theta, alpha, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, y_t, update, centers_x,
          centers_y, plot=True):
@@ -1212,16 +1279,21 @@ def MEIRL_unif(theta, beta, traj_data, TP, state_space,
 np.random.seed(2)
 
 # Global params
-D=16 #8 #6
+D=16 #8 #6x
 MOVE_NOISE = 0.05
-INTERCEPT_ETA = 3 # best for D=16
-#INTERCEPT_ETA = 1.5
 INTERCEPT_REW = -5
+#INTERCEPT_ETA = 1.5
+'''
+INTERCEPT_ETA = 3 # best for D=16
 WEIGHT = 0.2
+'''
+# adjusting intercept and weight to give all-positive betas:
+INTERCEPT_ETA = 2.5
+WEIGHT = 0.1
 RESCALE = 1
 RESET = 20
 M = 20 # number of actions used for importance sampling
-N = 500 # number of trajectories per expert
+N = 2000 # number of trajectories per expert
 Ti = 20 # length of trajectory
 B = 50#100 # number of betas/normals sampled for expectation
 Q_ITERS = 30000#50000
@@ -1247,10 +1319,10 @@ sns.heatmap(rewards)
 
 # Alpha vectors for the centers of the grid world
 # where each expert is closest to optimal.
-alpha1 = np.array([-WEIGHT, -WEIGHT, 0, 0, 1]) # (1,1)
-alpha2 = np.array([-WEIGHT, 0, 0, -WEIGHT, 1]) # (1,4)
-alpha3 = np.array([0, -WEIGHT, -WEIGHT, 0, 1]) # (4,1)
-alpha4 = np.array([0, 0, -WEIGHT, -WEIGHT, 1]) # (4,4)
+alpha1 = np.array([WEIGHT, WEIGHT, 0, 0, 1]) # (1,1)
+alpha2 = np.array([WEIGHT, 0, 0, WEIGHT, 1]) # (1,4)
+alpha3 = np.array([0, WEIGHT, WEIGHT, 0, 1]) # (4,1)
+alpha4 = np.array([0, 0, WEIGHT, WEIGHT, 1]) # (4,4)
 p = alpha1.shape[0]
 d = D // 2 + 1
 m = 4
@@ -1274,8 +1346,11 @@ np.random.seed(1)
 init_det_policy = np.random.choice([0,1,2,3], size=(D,D))
 init_policy = stoch_policy(init_det_policy, action_space)
 init_Q = np.random.rand(D,D,4)
-opt_policy, Q = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
+opt_policy, Q = Qlearn(0.5, 0.9, 0.1, Q_ITERS, 20, state_space,
           action_space, rewards, init_policy, init_Q)
+'''
+NOTE: SWITCHED GAM to 0.9!
+'''
           # This seems to converge robustly to optimal policy,
           # although Q values have some variance in states where
           # it doesn't really matter
@@ -1298,7 +1373,7 @@ boltz_data = make_data_Q(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, acti
 
 phi_star, theta_star, alpha_star, sigsq_star = ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 3, y_t_nest, SGD)
-dumb_data = make_data_myopic(alpha_star, sigsq_star, lin_rew_func(theta_star,
+dumb_data = make_data_myopic(alpha_star_2, sigsq_star_2, lin_rew_func(theta_star_2,
                             state_space, centers_x, centers_y), N, Ti, state_space, action_space,
                             init_state_sample, TP, m)
 # see_trajectory(rewards, np.array(traj_data[0])[0,0])
@@ -1311,7 +1386,7 @@ phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = ann_AEVB(theta, alpha, si
 phi_star_b, theta_star_b, alpha_star_b, sigsq_star_b = AEVB(theta, alpha, sigsq, phi, boltz_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 3, y_t_nest, SGD)
 theta_star_d, alpha_star_d = MEIRL_det(theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 3, y_t_nest, SGD, centers_x,
+         action_space, B, m, M, Ti, learn_rate, 2, y_t_nest, SGD, centers_x,
          centers_y)
 
 phi_star_AR, theta_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
@@ -1331,7 +1406,7 @@ Testing against constant-beta model
 '''
 
 theta_s, beta_s = MEIRL_unif(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 50, y_t_nest_unif, SGD_unif, centers_x, centers_y)
+         action_space, B, m, M, Ti, learn_rate, 2, y_t_nest_unif, SGD_unif, centers_x, centers_y)
 
 true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 5, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
@@ -1398,6 +1473,9 @@ To do:
      but have longer test trajectories to see if long-term reward is improved
     * try different mu functions for the locally optimal experts; maybe
      need some threshold of optimality for each expert to get good results
+    * Try restricting beta to be positive - in principle, quite hard to
+      distinguish a state with high positive reward being successfully pursued
+      by most experts from a state with high neg reward being anti-optimized
 '''
 
 
