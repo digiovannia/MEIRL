@@ -241,7 +241,7 @@ def synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
     s = init_state_sample(state_space)
     states = [s]
     beta = mu(s, alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
-    if Q:
+    if type(Q) == np.ndarray:
         a = np.random.choice(action_space, p = softmax(Q[s[0],s[1]], beta))
     else:
         a = np.random.choice(action_space, p = myo_policy(beta, s, TP, rewards))
@@ -250,7 +250,7 @@ def synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
         s = grid_step(s,a)
         states.append(s)
         beta = mu(s, alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
-        if Q:
+        if type(Q) == np.ndarray:
             a = np.random.choice(action_space, p = softmax(Q[s[0],s[1]], beta))
         else:
             a = np.random.choice(action_space, p = myo_policy(beta, s, TP,
@@ -1221,7 +1221,7 @@ NUMER = 0.05
 COEF = 0.1
 ETA_COEF = 0.01
 M = 20 # number of actions used for importance sampling
-N = 2000 # number of trajectories per expert
+N = 100 #2000 # number of trajectories per expert
 J = 10 # should be 30....
 T = 30
 Ti = 20 # length of trajectory
@@ -1428,6 +1428,9 @@ Out[89]: -484.9908606854497
 for comparison, random results in -1000
 
 SEED 20: det and unif both match optimal p consistently, this MDP seems easy
+
+SEED 30: again, det and unif matching optimal; random theta def doesn't, so
+ not trivial
 '''
 
 true_tot_b, AEVB_tot_b, unif_tot_b = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
