@@ -281,43 +281,22 @@ def make_data(alpha, sigsqs, rewards, N, Ti, state_space, action_space,
     ]
     return trajectories 
 
-def eta_mat(data):
+def RE_all(theta, data, TP, state_space, m, centers_x, centers_y):
     '''
-    arr = np.array([NUMER/(1+abs(data[:,0,:] // D - 1)),
-                    NUMER/(1+abs(data[:,0,:] % D - 1)),
-                    NUMER/(1+abs(data[:,0,:] // D - (D-2))),
-                    NUMER/(1+abs(data[:,0,:] % D - (D-2))),
-                    INTERCEPT_ETA*np.ones(data[:,0,:].shape)])
-            
-RESCALE*np.exp(-ETA_COEF*((st[0]-1)**2+(st[1]-1)**2)),
-                     RESCALE*np.exp(-ETA_COEF*((st[0]-(D-2))**2+(st[1]-(D-2))**2)),
-                     RESCALE*np.exp(-ETA_COEF*((st[0]-1)**2+(st[1]-(D-2))**2)),
-                     RESCALE*np.exp(-ETA_COEF*((st[0]-(D-2))**2+(st[1]-1)**2))
-                     
-        
-    
+    Expected reward and beta function bases (eta) for an array of states and
+    actions.
     '''
+    reward_est = lin_rew_func(theta, state_space, centers_x, centers_y)
     data_x = data[:,0,:] // D
     data_y = data[:,0,:] % D
     arr = np.array([RESCALE*np.exp(-ETA_COEF*((data_x-1)**2+(data_y-1)**2)),
-                    RESCALE*np.exp(-ETA_COEF*((data_x-(D-2))**2+(data_y-(D-2))**2)),
-                    RESCALE*np.exp(-ETA_COEF*((data_x-1)**2+(data_y-(D-2))**2)),
-                    RESCALE*np.exp(-ETA_COEF*((data_x-(D-2))**2+(data_y-1)**2)),
-                    INTERCEPT_ETA*np.ones(data[:,0,:].shape)])
-
-    return np.swapaxes(arr, 0, 1)
-
-def RE_all(theta, data, TP, state_space, m, centers_x, centers_y):
-    reward_est = lin_rew_func(theta, state_space, centers_x, centers_y)
-    R_all = arr_expect_reward(reward_est, data, TP, state_space) # m x Ti
-    E_all = eta_mat(data)
+      RESCALE*np.exp(-ETA_COEF*((data_x-(D-2))**2+(data_y-(D-2))**2)),
+      RESCALE*np.exp(-ETA_COEF*((data_x-1)**2+(data_y-(D-2))**2)),
+      RESCALE*np.exp(-ETA_COEF*((data_x-(D-2))**2+(data_y-1)**2)),
+      INTERCEPT_ETA*np.ones(data[:,0,:].shape)])
+    R_all = arr_expect_reward(reward_est, data, TP, state_space)
+    E_all = np.swapaxes(arr, 0, 1)
     return R_all, E_all
-
-def rho(state_space):
-    return 1/len(state_space)
-
-def uniform_action_sample(action_space, M):
-    return list(np.random.choice(action_space, M))
 
 def imp_samp_data(data, impa, j, m, Ti):
     actions = impa[j]*np.ones((m,Ti))
@@ -363,7 +342,7 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
     
     update is e.g. SGD or Adam
     '''
-    impa = uniform_action_sample(action_space, M)
+    impa = list(np.random.choice(action_space, M))
     N = len(traj_data)
     elbo = []
     phi_m = np.zeros_like(phi)
@@ -418,7 +397,7 @@ def AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
     
     update is e.g. SGD or Adam
     '''
-    impa = uniform_action_sample(action_space, M)
+    impa = list(np.random.choice(action_space, M))
     N = len(traj_data)
     elbo = []
     phi_m = np.zeros_like(phi)
@@ -503,7 +482,7 @@ def ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
     
     update is e.g. SGD or Adam
     '''
-    impa = uniform_action_sample(action_space, M)
+    impa = list(np.random.choice(action_space, M))
     N = len(traj_data)
     elbo = []
     phi_m = np.zeros_like(phi)
@@ -598,7 +577,7 @@ def grad_terms_re(normals, phi, alpha, sigsq, theta, data, R_all,
     return meanvec, denom, gvec, gnorm
 
 def logprobs(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all, logZvec, meanvec, denom):
-    p1 = np.log(rho(state_space)) - Ti/2*np.log(2*np.pi*sigsq)[:,None] - 1/(2*sigsq)[:,None]*gnorm
+    p1 = np.log(1/len(state_space)) - Ti/2*np.log(2*np.pi*sigsq)[:,None] - 1/(2*sigsq)[:,None]*gnorm
     logT = np.log(traj_TP(data, TP, Ti, m))
     p2 = np.einsum('ijk,ik->ij', meanvec, R_all) - logZvec + np.sum(logT, axis=1)[:,None]
     lp = p1 + p2    
@@ -979,7 +958,7 @@ def y_t_nest_unif(theta, theta_m, beta, beta_m, t):
             beta - const*(beta - beta_m))
 
 def loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec):
-    logT = np.log(rho(state_space)) + np.sum(np.log(traj_TP(data, TP, Ti, m)), axis=1)
+    logT = np.log(1/len(state_space)) + np.sum(np.log(traj_TP(data, TP, Ti, m)), axis=1)
     return -logZvec + logT + np.einsum('ij,ij->i', beta, R_all)
 
 def MEIRL_det(theta, alpha, traj_data, TP, state_space,
@@ -993,7 +972,7 @@ def MEIRL_det(theta, alpha, traj_data, TP, state_space,
     
     update is e.g. SGD or Adam
     '''
-    impa = uniform_action_sample(action_space, M)
+    impa = list(np.random.choice(action_space, M))
     N = len(traj_data)
     lik = []
     theta_m = np.zeros_like(theta)
@@ -1060,7 +1039,7 @@ def MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
     
     update is e.g. SGD or Adam
     '''
-    impa = uniform_action_sample(action_space, M)
+    impa = list(np.random.choice(action_space, M))
     N = len(traj_data)
     lik = []
     theta_m = np.zeros_like(theta)
@@ -1128,7 +1107,7 @@ def MEIRL_det_reg(lam, theta, alpha, traj_data, TP, state_space,
     
     update is e.g. SGD or Adam
     '''
-    impa = uniform_action_sample(action_space, M)
+    impa = list(np.random.choice(action_space, M))
     N = len(traj_data)
     lik = []
     theta_m = np.zeros_like(theta)
@@ -1194,7 +1173,7 @@ def MEIRL_unif(theta, beta, traj_data, TP, state_space,
     
     update is e.g. SGD or Adam
     '''
-    impa = uniform_action_sample(action_space, M)
+    impa = list(np.random.choice(action_space, M))
     N = len(traj_data)
     theta_m = np.zeros_like(theta)
     beta_m = np.zeros_like(beta)
@@ -1492,9 +1471,9 @@ well under this restriction, but so does the model where beta is treated as cons
 # works p well even under misspecification for D = 8
 # doesn't really work on D = 16 grid
 
-tr_tot, AE_tot, ra_tot = evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
+tr_tot, det_tot, ra_tot = evaluate_det_vs_random(theta, alpha, sigsq, phi, TP, 1, opt_policy, T,
                         state_space, action_space, rewards, init_policy,
-                        init_Q, 30, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y, cr_reps)
+                        init_Q, J, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y, cr_reps)
 
 
 
@@ -1502,8 +1481,7 @@ tr_tot, AE_tot, ra_tot = evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, 
 To do:
     * misspec of reward function?
     * misspec of beta mean?
-    * adaptive restart
-    * regularize on theta norm
+    * batch GD over trajectories?
     * more/longer trajectories? Could shorten the training traj to speed training
      but have longer test trajectories to see if long-term reward is improved
     * try different mu functions for the locally optimal experts; maybe
@@ -1705,7 +1683,7 @@ def grad_terms(betas, phi, alpha, sigsq, theta, data, R_all,
     return one, vec, denom, vecnorm, gvec, gnorm
 
 def logp(state_space, Ti, sigsq, gnorm, data, TP, m, betas, R_all, logZvec):
-    p1 = np.log(rho(state_space)) - Ti/2*np.log(2*np.pi*sigsq)[:,None] - 1/(2*sigsq)[:,None]*gnorm
+    p1 = np.log(1/len(state_space)) - Ti/2*np.log(2*np.pi*sigsq)[:,None] - 1/(2*sigsq)[:,None]*gnorm
     logT = np.log(traj_TP(data, TP, Ti, m))
     p2 = np.einsum('ijk,ik->ij', betas, R_all) - logZvec + np.sum(logT, axis=1)[:,None]
     return p1 + p2
