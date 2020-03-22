@@ -17,8 +17,7 @@ def manh_dist(p1, p2):
     return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
 
 def act_to_coord(a):
-    d = {0: (-1, 0), 1: (0, 1), 2: (1, 0),
-         3: (0,-1)}
+    d = {0: (-1, 0), 1: (0, 1), 2: (1, 0), 3: (0,-1)}
     return d[a]
 
 def state_index(tup):
@@ -58,7 +57,7 @@ def transition(state_space, action_space):
             for x2 in range(D):
                 for y2 in range(D):
                     if ((x2 == x1 + action[0]) and
-                        (y2 == y1 + action[1])):
+                      (y2 == y1 + action[1])):
                         TP[s,a,state_index((x2,y2))] += 1 - MOVE_NOISE
                     if manh_dist((x2, y2), state_space[s]) == 1:
                         TP[s,a,state_index((x2,y2))] += MOVE_NOISE/4
@@ -66,9 +65,9 @@ def transition(state_space, action_space):
                         count = (x2 == 0 or x2 == D-1) + (y2 == 0 or y2 == D-1)
                         TP[s,a,state_index((x2,y2))] += count*MOVE_NOISE/4
                         if ((x1 + action[0] < 0) or
-                            (x1 + action[0] >= D) or
-                            (y1 + action[1] < 0) or
-                            (y1 + action[1] >= D)):
+                          (x1 + action[0] >= D) or
+                          (y1 + action[1] < 0) or
+                          (y1 + action[1] >= D)):
                             TP[s,a,state_index((x2,y2))] += 1 - MOVE_NOISE
     return TP
 
@@ -144,18 +143,18 @@ def Qlearn(rate, gam, eps, K, T, state_space, action_space,
 
 def eta(st):
     '''
-    return np.array([abs(st[0]-1),
-                     abs(st[1]-1),
-                     abs(st[0]-(D-2)),
-                     abs(st[1]-(D-2)), INTERCEPT_ETA])
+    Features for beta function
     '''
     return np.array([RESCALE*np.exp(-ETA_COEF*((st[0]-1)**2+(st[1]-1)**2)),
-                     RESCALE*np.exp(-ETA_COEF*((st[0]-(D-2))**2+(st[1]-(D-2))**2)),
-                     RESCALE*np.exp(-ETA_COEF*((st[0]-1)**2+(st[1]-(D-2))**2)),
-                     RESCALE*np.exp(-ETA_COEF*((st[0]-(D-2))**2+(st[1]-1)**2)),
-                     INTERCEPT_ETA])
+      RESCALE*np.exp(-ETA_COEF*((st[0]-(D-2))**2+(st[1]-(D-2))**2)),
+      RESCALE*np.exp(-ETA_COEF*((st[0]-1)**2+(st[1]-(D-2))**2)),
+      RESCALE*np.exp(-ETA_COEF*((st[0]-(D-2))**2+(st[1]-1)**2)),
+      INTERCEPT_ETA])
 
 def mu(s, alpha):
+    '''
+    Mean of distribution for beta
+    '''
     return np.dot(eta(s), alpha)
 
 def mu_all(alpha):
@@ -178,65 +177,46 @@ def softmax(v, beta, axis=False):
 
 def beta_func(alpha, sigsq):
     '''
-    Computes beta for whole state space.
+    Computes a sample of betas for whole state space.
     '''
     noise = np.random.normal(loc=0,scale=np.sqrt(sigsq),
-                             size=(D,D))
+      size=(D,D))
     muvals = mu_all(alpha)
     return muvals + noise
 
-'''
-Going to test on trajectories from Q* model rather than one-step,
-will see how bad...
-'''
-
-###### Phase 2 ######
-
-'''
-CHANGED THE REWARD FUNC!
-
-may want to randomly generate a bunch of these
-'''
-
 def arr_radial(s, c, coef):
-    #return np.exp(-5*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
- #   return RESCALE*np.exp(-2*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
+    '''
+    Radial basis functions for the reward function, applied to an array of
+    states. "c" is a fixed center point.
+    '''
     return RESCALE*np.exp(-coef*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
 
 def psi_all_states(state_space, centers_x, centers_y):
-    # d x D**2
-    lst = list([arr_radial(state_space, (centers_x[i],centers_y[i]), COEF) for i in range(len(centers_x))])
+    '''
+    Basis functions for the entire state space
+    '''
+    lst = list([arr_radial(state_space, (centers_x[i],centers_y[i]),
+      COEF) for i in range(len(centers_x))])
     lst.append(INTERCEPT_REW*np.ones(len(state_space)))
     return np.array(lst)
 
 def lin_rew_func(theta, state_space, centers_x, centers_y):
-    '''
-    Using radial features above and theta below,
-    gives a very close approximation to the true
-    RF.
-    '''
     return np.reshape(theta.dot(psi_all_states(state_space, centers_x,
-                                               centers_y)), (D, D))
+      centers_y)), (D, D))
     
 def arr_expect_reward(rewards, data, TP, state_space):
     '''
-    data is m x 2 x Ti
+    Expected next-step reward for an array of states and actions
     '''
-    return TP[data[:,0], data[:,1]].dot(np.ravel(rewards)) #m x Ti
+    return TP[data[:,0], data[:,1]].dot(np.ravel(rewards))
 
 def grad_lin_rew(data, state_space, centers_x, centers_y):
     '''
-    Input (data) is m x 2 x Ti
-
-    Output should be m x d x Ti
-
-    Each column is E(s'|st,at)(psi(s')) where psi is
-    feature
+    Gradient of reward function for array of states and actions
     '''
     probs = TP[data[:,0], data[:,1]] # m x Ti x D**2
     return np.swapaxes(probs.dot(psi_all_states(state_space, centers_x,
-                                                centers_y).transpose()),
-                       1, 2)
+      centers_y).transpose()), 1, 2)
 
 def init_state_sample(state_space):
     '''
@@ -245,54 +225,36 @@ def init_state_sample(state_space):
     return state_space[np.random.choice(len(state_space))]
 
 def myo_policy(beta, s, TP, rewards):
+    '''
+    Policy for myopic expert (action probability proportional to next-step
+    expected reward)
+    '''
     expect_rew = TP[state_index(s)].dot(np.ravel(rewards))
     return softmax(expect_rew, beta)
 
-def synthetic_traj_myo(rewards, alpha, sigsq, i, Ti, state_space, action_space,
-                       init_state_sample, TP):
+def synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
+                       init_state_sample, TP, Q=False):
     '''
-    Generate a fake trajectory based on given
-    policy. Need to separately generate
-    variational distribution parameters if want to
-    use those.
-    
-    EDIT FOR LOCALLY OPT
+    Generates trajectory based on myopic policy by default, or by Q-value-based
+    policy if a Q array is supplied.
     '''
     s = init_state_sample(state_space)
     states = [s]
     beta = mu(s, alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
-    a = np.random.choice(action_space, p = myo_policy(beta, s,
-               TP, rewards))
+    if Q:
+        a = np.random.choice(action_space, p = softmax(Q[s[0],s[1]], beta))
+    else:
+        a = np.random.choice(action_space, p = myo_policy(beta, s, TP, rewards))
     actions = [a]
     for _ in range(Ti-1):
         s = grid_step(s,a)
         states.append(s)
         beta = mu(s, alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
-        a = np.random.choice(action_space, p = myo_policy(beta, s,
-               TP, rewards))
-        actions.append(a)
-    return list(multi_state_index(np.array(states))), actions
-
-def synthetic_traj_Q(rewards, alpha, sigsq, i, Ti, state_space, action_space,
-                       init_state_sample, TP, Q_star):
-    '''
-    Generate a fake trajectory based on given
-    policy. Need to separately generate
-    variational distribution parameters if want to
-    use those.
-    
-    EDIT FOR LOCALLY OPT
-    '''
-    s = init_state_sample(state_space)
-    states = [s]
-    beta = mu(s, alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
-    a = np.random.choice(action_space, p = softmax(Q_star[s[0],s[1]], beta))
-    actions = [a]
-    for _ in range(Ti-1):
-        s = grid_step(s,a)
-        states.append(s)
-        beta = mu(s, alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
-        a = np.random.choice(action_space, p = softmax(Q_star[s[0],s[1]], beta))
+        if Q:
+            a = np.random.choice(action_space, p = softmax(Q[s[0],s[1]], beta))
+        else:
+            a = np.random.choice(action_space, p = myo_policy(beta, s, TP,
+              rewards))
         actions.append(a)
     return list(multi_state_index(np.array(states))), actions
 
@@ -306,38 +268,17 @@ def see_trajectory(reward_map, state_seq):
         plt.annotate('*', (s[1]+0.2,s[0]+0.7), color='b', size=24)
         plt.show()
 
-def make_data_Q(alpha, sigsqs, reward_str, N, Ti, state_space, action_space,
-                     init_state_sample, TP, m, Q):
+def make_data(alpha, sigsqs, rewards, N, Ti, state_space, action_space,
+              init_state_sample, TP, m, Q=False):
     '''
-    Creates N trajectories each for local experts, given Q,
-    alphas, sigsqs, rewards (which may be "true" or
-    based on current guesses!)
-    
-    OLD
+    Makes a list of N trajectories based on the given parameters and the
+    myopic policy by default, or the Q-value-based policy if Q is provided.
     '''
     trajectories = [
-        [synthetic_traj_Q(reward_str, alpha, sigsq, i, Ti, state_space, action_space,
+        [synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
                        init_state_sample, TP, Q) for i in range(m)]
         for _ in range(N)
     ]
-    # first index is N
-    # second is m
-    return trajectories 
-
-def make_data_myopic(alpha, sigsqs, reward_str, N, Ti, state_space, action_space,
-                     init_state_sample, TP, m):
-    '''
-    Creates N trajectories each for local experts, given Q,
-    alphas, sigsqs, rewards (which may be "true" or
-    based on current guesses!)
-    '''
-    trajectories = [
-        [synthetic_traj_myo(reward_str, alpha, sigsq, i, Ti, state_space, action_space,
-                       init_state_sample, TP) for i in range(m)]
-        for _ in range(N)
-    ]
-    # first index is N
-    # second is m
     return trajectories 
 
 def eta_mat(data):
@@ -757,11 +698,10 @@ def total_reward(reps, policy, T, state_space, rewards):
         reward_list.append(ret)
     return reward_list
 
-def cumulative_reward(reps, policy, T, state_space, rewards):
+def cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards):
     reward_list = []
-    for _ in range(reps):
-        s = state_space[np.random.choice(len(state_space))]
-        ret = episode(s,T,policy,rewards)[2] #true reward
+    for i in range(cr_reps):
+        ret = episode(s_list[i],T,policy,rewards)[2] #true reward
         reward_list.extend(ret)
     return reward_list
 
@@ -779,8 +719,9 @@ def evaluate(reps, policy, T, state_space, rewards, theta_est, init_policy,
 def evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
                         state_space, action_space, rewards, init_policy,
                         init_Q, J, B, m, M, Ti, learn_rate, traj_data,
-                        centers_x, centers_y):
-    true_rew = cumulative_reward(reps, policy, T, state_space, rewards)
+                        centers_x, centers_y, cr_reps):
+    s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
+    true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards)
     plt.plot(np.cumsum(true_rew), color='b') 
     true_total = np.sum(true_rew)
     AEVB_total = []
@@ -791,7 +732,7 @@ def evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
         reward_est = lin_rew_func(theta_star, state_space, centers_x, centers_y)
         est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
           action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
+        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='r')
         AEVB_total.append(np.sum(est_rew))
         
@@ -799,7 +740,7 @@ def evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
                                   centers_x, centers_y)
         est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
           action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
+        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='g')
         random_total.append(np.sum(est_rew))
     return true_total, AEVB_total, random_total
@@ -807,8 +748,9 @@ def evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
 def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
                         state_space, action_space, rewards, init_policy,
                         init_Q, J, B, m, M, Ti, learn_rate, traj_data,
-                        centers_x, centers_y):
-    true_rew = cumulative_reward(reps, policy, T, state_space, rewards)
+                        centers_x, centers_y, cr_reps):
+    s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
+    true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards)
     plt.plot(np.cumsum(true_rew), color='b') 
     true_total = np.sum(true_rew)
     AEVB_total = []
@@ -819,7 +761,7 @@ def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
         reward_est = lin_rew_func(theta_star, state_space, centers_x, centers_y)
         est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
           action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
+        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='r')
         AEVB_total.append(np.sum(est_rew))
         
@@ -829,7 +771,7 @@ def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
                                   centers_x, centers_y)
         est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
           action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
+        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='g')
         unif_total.append(np.sum(est_rew))
     return true_total, AEVB_total, unif_total
@@ -837,8 +779,9 @@ def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
 def evaluate_det_vs_unif(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
                         state_space, action_space, rewards, init_policy,
                         init_Q, J, B, m, M, Ti, learn_rate, traj_data,
-                        centers_x, centers_y):
-    true_rew = cumulative_reward(reps, policy, T, state_space, rewards)
+                        centers_x, centers_y, cr_reps):
+    s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
+    true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards)
     plt.plot(np.cumsum(true_rew), color='b') 
     true_total = np.sum(true_rew)
     det_total = []
@@ -851,7 +794,7 @@ def evaluate_det_vs_unif(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
                                   centers_x, centers_y)
         est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
           action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
+        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='r')
         det_total.append(np.sum(est_rew))
 
@@ -861,16 +804,49 @@ def evaluate_det_vs_unif(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
                                   centers_x, centers_y)
         est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
           action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
+        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='g')
         unif_total.append(np.sum(est_rew))
     return true_total, det_total, unif_total
 
+def evaluate_det_vs_random(theta, alpha, sigsq, phi, TP, reps, policy, T,
+                        state_space, action_space, rewards, init_policy,
+                        init_Q, J, B, m, M, Ti, learn_rate, traj_data,
+                        centers_x, centers_y, cr_reps):
+    s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
+    true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards)
+    plt.plot(np.cumsum(true_rew), color='b') 
+    true_total = np.sum(true_rew)
+    det_total = []
+    unif_total = []
+    for _ in range(J):
+        theta_star = MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, reps, y_t_nest_unif, SGD_unif,
+         centers_x, centers_y, plot=False)[0]
+        reward_est = lin_rew_func(theta_star, state_space,
+                                  centers_x, centers_y)
+        est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
+          action_space, reward_est, init_policy, init_Q)[0]
+        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
+        plt.plot(np.cumsum(est_rew), color='r')
+        det_total.append(np.sum(est_rew))
+
+        reward_est = lin_rew_func(np.random.normal(size=d), state_space,
+                                  centers_x, centers_y)
+        est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
+          action_space, reward_est, init_policy, init_Q)[0]
+        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
+        plt.plot(np.cumsum(est_rew), color='g')
+        unif_total.append(np.sum(est_rew))
+    return true_total, det_total, unif_total
+
+
 def evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
                         state_space, action_space, rewards, init_policy,
                         init_Q, J, B, m, M, Ti, learn_rate, traj_data,
-                        centers_x, centers_y):
-    true_rew = cumulative_reward(reps, policy, T, state_space, rewards)
+                        centers_x, centers_y, cr_reps):
+    s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
+    true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards)
     plt.plot(np.cumsum(true_rew), color='b') 
     true_total = np.sum(true_rew)
     AEVB_total = []
@@ -881,7 +857,7 @@ def evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
         reward_est = lin_rew_func(theta_star, state_space, centers_x, centers_y)
         est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
           action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
+        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='r')
         AEVB_total.append(np.sum(est_rew))
         
@@ -895,46 +871,11 @@ def evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
                                   centers_x, centers_y)
         est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
           action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
+        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='g')
         det_total.append(np.sum(est_rew))
     return true_total, AEVB_total, det_total
 
-def evaluate_vs_uniform_init(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
-                        state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, learn_rate, traj_data,
-                        centers_x, centers_y):
-    true_rew = cumulative_reward(reps, policy, T, state_space, rewards)
-    plt.plot(np.cumsum(true_rew), color='b') 
-    true_total = np.sum(true_rew)
-    AEVB_total = []
-    unif_total = []
-    for _ in range(J):
-        phi = np.random.rand(m,2)
-        alpha = np.random.normal(size=(m,p), scale=0.05)
-        sigsq = np.random.rand(m)
-        theta = np.random.normal(size=d)
-        
-        theta_star = ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 5, y_t_nest, SGD, plot=False)[1]
-        reward_est = lin_rew_func(theta_star, state_space, centers_x, centers_y)
-        est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
-        plt.plot(np.cumsum(est_rew), color='r')
-        AEVB_total.append(np.sum(est_rew))
-        
-        theta_star = MEIRL_unif(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 5, y_t_nest_unif, SGD_unif, centers_x, centers_y)[0]
-        reward_est = lin_rew_func(theta_star, state_space,
-                                  centers_x, centers_y)
-        est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
-        plt.plot(np.cumsum(est_rew), color='g')
-        unif_total.append(np.sum(est_rew))
-    return true_total, AEVB_total, unif_total
-    
 def logZ_unif(beta, impa, theta, data, M, TP, action_space, centers_x, centers_y):
     '''
     Importance sampling approximation of logZ
@@ -1282,12 +1223,11 @@ def MEIRL_unif(theta, beta, traj_data, TP, state_space,
 
 # Initializations
 #np.random.seed(1)
-np.random.seed(10)
+np.random.seed(30) #20) #10)
 
 # Global params
 D=16 #8 #6x
 MOVE_NOISE = 0.05
-INTERCEPT_REW = -5
 #INTERCEPT_ETA = 1.5
 '''
 INTERCEPT_ETA = 3 # best for D=16
@@ -1303,10 +1243,14 @@ COEF = 0.1
 ETA_COEF = 0.01
 M = 20 # number of actions used for importance sampling
 N = 2000 # number of trajectories per expert
+J = 10 # should be 30....
+T = 30
 Ti = 20 # length of trajectory
 B = 50#100 # number of betas/normals sampled for expectation
 Q_ITERS = 30000#50000
 learn_rate = 0.0001
+cr_reps = 10
+reps = 1
 
 '''
 # Used in second wave of experiments, when D = 8
@@ -1322,6 +1266,7 @@ action_space = list(range(4))
 TP = transition(state_space, action_space)
 #true_theta = np.array([4, 4, -6, -6, 0.1])
 true_theta = np.random.normal(size = D // 2 + 1, scale=3)
+INTERCEPT_REW = 0
 rewards = lin_rew_func(true_theta, state_space, centers_x, centers_y)
 sns.heatmap(rewards)
 # Misspecified reward bases?
@@ -1370,13 +1315,14 @@ init_policy = stoch_policy(init_det_policy, action_space)
 init_Q = np.random.rand(D,D,4)
 opt_policy, Q = Qlearn(0.5, 0.9, 0.1, Q_ITERS, 20, state_space,
           action_space, rewards, init_policy, init_Q)
+# takes about 1 min
 '''
 NOTE: SWITCHED GAM to 0.9!
 '''
           # This seems to converge robustly to optimal policy,
           # although Q values have some variance in states where
           # it doesn't really matter
-visualize_policy(rewards, opt_policy)
+#visualize_policy(rewards, opt_policy)
 
 phi = np.random.rand(m,2)
 alpha = np.random.normal(size=(m,p), scale=0.05)
@@ -1385,10 +1331,21 @@ beta = np.random.rand(m)
 #theta = np.random.normal(size=d)
 theta = np.zeros_like(true_theta)#np.array([0, 0, 0, 0, 0]) 
 
+traj_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
+                     init_state_sample, TP, m)
+boltz_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
+                     init_state_sample, TP, m, Q)
+'''
 traj_data = make_data_myopic(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
                      init_state_sample, TP, m)
 boltz_data = make_data_Q(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
                      init_state_sample, TP, m, Q)
+'''
+
+true_tot, det_tot_p, unif_tot_p = evaluate_det_vs_unif(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
+                        state_space, action_space, rewards, init_policy,
+                        init_Q, 30, B, m, M, Ti, learn_rate, traj_data,
+                        centers_x, centers_y, cr_reps)
 # first index is n=1 to N
 # second index is expert
 # third is states, actions
@@ -1467,27 +1424,39 @@ theta_s, beta_s = MEIRL_unif(theta, beta, traj_data, TP, state_space,
 
 true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
-                        init_Q, 30, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y)
+                        init_Q, 30, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y, cr_reps)
 # Using AR_AEVB as the inner loop, this works p well on D=8
 
 true_tot, AEVB_tot, det_tot = evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
-                        init_Q, 30, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y)
+                        init_Q, 30, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y, cr_reps)
 
 true_tot, det_tot_p, unif_tot_p = evaluate_det_vs_unif(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
                         init_Q, 30, B, m, M, Ti, learn_rate, traj_data,
-                        centers_x, centers_y)
+                        centers_x, centers_y, cr_reps)
+'''
+^ results from this, ****SEED 10****:
+true_tot
+Out[87]: -287.57249017468143
+
+np.mean(det_tot_p)
+Out[88]: -404.53112168237095
+
+np.mean(unif_tot_p)
+Out[89]: -484.9908606854497
+
+for comparison, random results in -1000
+
+SEED 20: det and unif both match optimal p consistently, this MDP seems easy
+'''
 
 true_tot_b, AEVB_tot_b, unif_tot_b = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
-                        init_Q, 30, B, m, M, Ti, learn_rate, boltz_data, centers_x, centers_y)
+                        init_Q, 30, B, m, M, Ti, learn_rate, boltz_data, centers_x, centers_y, cr_reps)
 # Works robustly well! This is on data where the demonstrators are Q-softmaxing,
 # not next-step reward!
 
-true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform_init(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 20,
-                        state_space, action_space, rewards, init_policy,
-                        init_Q, 30, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y)
 # evidently sensitive to initialization, but maybe there's something principled
 # about initializing at theta = 0? Implies prior of ignorance about reward
 
@@ -1525,7 +1494,7 @@ well under this restriction, but so does the model where beta is treated as cons
 
 tr_tot, AE_tot, ra_tot = evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
-                        init_Q, 30, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y)
+                        init_Q, 30, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y, cr_reps)
 
 
 
@@ -1542,6 +1511,9 @@ To do:
     * Try restricting beta to be positive - in principle, quite hard to
       distinguish a state with high positive reward being successfully pursued
       by most experts from a state with high neg reward being anti-optimized
+    * Vary:
+        - sample size -- see how many samples necessary to get good performance
+        - sigma -- maybe true model will outperform uniform when high variance?
 '''
 
 
