@@ -1268,7 +1268,7 @@ def MEIRL_unif(theta, beta, traj_data, TP, state_space,
             y_theta, y_beta = y_t(theta, theta_m,
               beta, beta_m, t)
             data = np.array(traj_data[n]) # m x 2 x Ti
-            R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
+            R_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)[0]
             logZvec, glogZ_theta, glogZ_beta = logZ_unif(y_beta, impa,
               y_theta, data, M, TP, action_space, centers_x, centers_y)
               
@@ -1285,7 +1285,7 @@ def MEIRL_unif(theta, beta, traj_data, TP, state_space,
 
 # Initializations
 #np.random.seed(1)
-np.random.seed(40) #30) #20) #10)
+np.random.seed(50) #40) #30) #20) #10)
 
 # Global params
 D=16 #8 #6x
@@ -1300,7 +1300,7 @@ RESCALE = 1
 RESET = 20
 NUMER = 0.05
 COEF = 0.1
-ETA_COEF = 0.01 #0.05 #0.1
+ETA_COEF = 1#0.01 #0.05 #0.1
 '''
 Changing the above to see if making the experts suboptimal in a larger space
 makes the difference between det and unif more stark
@@ -1308,7 +1308,7 @@ makes the difference between det and unif more stark
 M = 20 # number of actions used for importance sampling
 N = 20 #100 #2000 # number of trajectories per expert
 J = 10 # should be 30....
-T = 30
+T = 50
 Ti = 20 # length of trajectory
 B = 50#100 # number of betas/normals sampled for expectation
 Q_ITERS = 30000#50000
@@ -1481,7 +1481,7 @@ evaluate(10, opt_policy, 50, state_space, rewards, theta_star, init_policy,
 '''
 Testing against constant-beta model
 '''
-r
+
 theta_s, beta_s = MEIRL_unif(theta, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 1, y_t_nest_unif, GD_unif, centers_x, centers_y)
 
@@ -1594,4 +1594,7 @@ To do:
         - sigma -- maybe true model will outperform uniform when high variance?
     * Maybe test sample complexity necessary to get some epsilon-close results,
      plot against (1) size of grid world, (2) amt of noise, (3) coef for mu?
+     * May need to force reward function to be such that doing well in the MDP
+     is hard, i.e. not sufficient to just get one or two "nodes" of the reward
+     space correct
 '''
