@@ -1300,7 +1300,7 @@ RESCALE = 1
 RESET = 20
 NUMER = 0.05
 COEF = 0.1
-ETA_COEF = 1#0.01 #0.05 #0.1
+ETA_COEF = 0.05 #0.01 #0.05 #0.1 #1
 '''
 Changing the above to see if making the experts suboptimal in a larger space
 makes the difference between det and unif more stark
@@ -1323,13 +1323,32 @@ centers_y = [2, D-1, D-2, 0]
 '''
 centers_x = np.random.choice(D, D//2)
 centers_y = np.random.choice(D, D//2)
+d = D // 2 + 1
+
 
 # Making gridworld
 state_space = np.array([(i,j) for i in range(D) for j in range(D)])
 action_space = list(range(4))
 TP = transition(state_space, action_space)
-#true_theta = np.array([4, 4, -6, -6, 0.1])
-true_theta = np.random.normal(size = D // 2 + 1, scale=3)
+#true_theta = np.random.normal(size = D // 2 + 1, scale=3)
+'''
+Trying out a more sparse-reward MDP (N = 20):
+    Results (SEED 50):
+        ETA_COEF 0.01: seems det and unif do roughly as well; only half as much reward
+    as optimal though
+        ETA_COEF 0.05: det does well about 2/3 of the time! unif much less so,
+        only hits 1 out of 10. So evidently the setting where det is competitive
+        is when reward is sparse, and expertise is also sparse
+        * Next trying this same ETA_COEF, but with experts covering every 
+        corner --> both do better, unif gets much better
+        * Next trying same ETA_COEF, covering every corner, but with N=200
+        --> both do much better, det gets pretty close to opt, but unif is close
+        too
+        * next keeping N=200, but going back to experts not covering every; weirdly,
+        now unif does *better* than det, and unif only ~300 while 1000 true_tot
+'''
+true_theta = np.zeros(d)
+true_theta[0] += 5*np.random.rand()
 INTERCEPT_REW = 0
 rewards = lin_rew_func(true_theta, state_space, centers_x, centers_y)
 sns.heatmap(rewards)
@@ -1341,16 +1360,22 @@ def expert_alphas(m):
 # Alpha vectors for the centers of the grid world
 # where each expert is closest to optimal.
 
-#alpha1 = np.array([WEIGHT, 0, 0, 0, 1]) # (1,1)
-#alpha4 = np.array([0, WEIGHT, 0, 0, 1]) # (4,1)
+# # (1,1)
+# # (4,1)
 
 
+'''
+alpha1 = np.array([WEIGHT, 0, 0, 0, 1]) # (1,1)
+alpha2 = np.array([0, 0, WEIGHT, 0, 1]) # (1,4)
+alpha3 = np.array([0, 0, 0, WEIGHT, 1]) # (4,4)
+alpha4 = np.array([0, WEIGHT, 0, 0, 1])
+'''
 alpha1 = np.array([0, WEIGHT, 0, 0, 1]) # (1,1)
 alpha2 = np.array([0, 0, WEIGHT, 0, 1]) # (1,4)
 alpha3 = np.array([0, WEIGHT, 0, 0, 1]) # (4,4)
 alpha4 = np.array([0, 0, WEIGHT, 0, 1])
+
 p = alpha1.shape[0]
-d = D // 2 + 1
 m = 4
 
 '''
@@ -1597,4 +1622,19 @@ To do:
      * May need to force reward function to be such that doing well in the MDP
      is hard, i.e. not sufficient to just get one or two "nodes" of the reward
      space correct
+     
+QUALITATIVE NOTES:
+    * The varying-beta model appears to do better than uniform when rewards are
+    sparse *and* states-of-high-expertise by the demonstrators are also sparse,
+    *and* the coverage of these states-of-high-expertise is wide (e.g. all 4
+    corners).
+     - In sparse-reward MDP, results seem to be hit-or-miss, as you'd expect;
+     either the algo places highest reward on the right spot and pursues it above
+     all others - thus doing well - or it doesn't, and does quite poorly.
+     - Increasing coverage of the state space by the experts' high betas seems
+     to improve performance of both det and unif (they get to be higher fraction
+     of optimal in cumulative return). But increasing this coverage helps the
+     unif model a lot more than det, apparently.
+    * All the models seem to do better than random even when there are larger
+    chunks of the state space on which the demonstrators act randomly.
 '''
