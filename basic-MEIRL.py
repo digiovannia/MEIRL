@@ -287,6 +287,7 @@ def RE_all(theta, data, TP, state_space, m, centers_x, centers_y):
     actions.
     '''
     reward_est = lin_rew_func(theta, state_space, centers_x, centers_y)
+    # converting int representation of states to coordinates
     data_x = data[:,0,:] // D
     data_y = data[:,0,:] % D
     arr = np.array([RESCALE*np.exp(-ETA_COEF*((data_x-1)**2+(data_y-1)**2)),
@@ -308,7 +309,7 @@ def imp_samp_data(data, impa, j, m, Ti):
 
 def traj_TP(data, TP, Ti, m):
     '''
-    Computes TPs for (s1, a1) to s2, ..., (st-1, at-1) to st
+    Computes TPs for (s1, a1) to s2, ..., (st-1, at-1) to st in trajectories
     '''
     s2_thru_sTi = TP[data[:,0,:(Ti-1)],data[:,1,:(Ti-1)]]
     return s2_thru_sTi[np.arange(m)[:,None], np.arange(Ti-1), data[:,0,1:]]
@@ -1346,6 +1347,7 @@ Trying out a more sparse-reward MDP (N = 20):
         too
         * next keeping N=200, but going back to experts not covering every; weirdly,
         now unif does *better* than det, and unif only ~300 while 1000 true_tot
+        * at N=1000, back to det doing slightly better
 '''
 true_theta = np.zeros(d)
 true_theta[0] += 5*np.random.rand()
@@ -1622,6 +1624,8 @@ To do:
      * May need to force reward function to be such that doing well in the MDP
      is hard, i.e. not sufficient to just get one or two "nodes" of the reward
      space correct
+     * Write function that stores the hyperparams/settings and saves results from
+     evaluation
      
 QUALITATIVE NOTES:
     * The varying-beta model appears to do better than uniform when rewards are
