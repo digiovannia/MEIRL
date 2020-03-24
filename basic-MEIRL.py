@@ -371,15 +371,19 @@ def grad_terms(normals, phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m):
     gnorm = np.einsum('ijk,ijk->ij', gvec, gvec) #faster than tensordot, but still p slow
     return meanvec, denom, gvec, gnorm
 
-def logprobs(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all,
+def elbo(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all,
              logZvec, meanvec, denom):
-    p1 = -np.log(len(state_space)) - Ti/2*np.log(2*np.pi*sigsq)[:,None] - 1/(2*sigsq)[:,None]*gnorm
-    logT = np.log(traj_TP(data, TP, Ti, m))
-    p2 = np.einsum('ijk,ik->ij', meanvec, R_all) - logZvec + np.sum(logT, axis=1)[:,None]
+    '''
+    Evidence lower bound
+    '''
+    lrho = -np.log(len(state_space))
+    p1 = lrho - Ti/2*np.log(2*np.pi*sigsq)[:,None] - 1/(2*sigsq)[:,None]*gnorm
+    logT = np.sum(np.log(traj_TP(data, TP, Ti, m)), axis=1)
+    p2 = np.einsum('ijk,ik->ij', meanvec, R_all) - logZvec + logT[:,None]
     lp = p1 + p2    
     epsnorm = np.einsum('ijk,ijk->ij', normals, normals)
     lq = -Ti/2*np.log(2*np.pi*denom)[:,None] - epsnorm/2
-    return lp - lq
+    return (lp - lq).mean(axis=1).sum()
 
 def phi_grad(phi, m, Ti, normals, denom, sigsq, glogZ_phi):
     x = (phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:] + (denom**(1/2))[:,None,None]*normals
@@ -584,7 +588,7 @@ def logZ_det(beta, impa, theta, data, M, TP, R_all, E_all, action_space,
     glogZ_alpha = (num_a/den[:,None,:]).sum(axis=2)
     # This appears to approximate the true logZ for the
     # grid world with 4 actions very well!
-    return logZvec, glogZ_theta, glogZ_alpha# m x N; Not averaged over beta!
+    return logZvec, glogZ_theta, glogZ_alpha
 
 def alpha_grad_det(glogZ_alpha, R_all, E_all):
     return -glogZ_alpha + np.einsum('ijk,ik->ij', E_all, R_all)
@@ -592,11 +596,6 @@ def alpha_grad_det(glogZ_alpha, R_all, E_all):
 def theta_grad_det(data, beta, state_space, glogZ_theta, centers_x, centers_y):
     gradR = grad_lin_rew(data, state_space, centers_x, centers_y) # m x d x Ti 
     return -glogZ_theta + np.einsum('ij,ikj->k', beta, gradR)
-
-def theta_grad_det_reg(lam, theta, data, beta, state_space, glogZ_theta, centers_x, centers_y):
-    gradR = grad_lin_rew(data, state_space, centers_x, centers_y) # m x d x Ti 
-    penalty = lam*theta
-    return -glogZ_theta + np.einsum('ij,ikj->k', beta, gradR) - penalty
 
 def GD_unif(theta, beta, g_theta, g_beta, learn_rate):
     theta = theta + learn_rate*g_theta
@@ -626,7 +625,7 @@ def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     '''
     impa = list(np.random.choice(action_space, M))
     N = len(traj_data)
-    elbo = []
+    elbos = []
     phi_m = np.zeros_like(phi)
     theta_m = np.zeros_like(theta)
     alpha_m = np.zeros_like(alpha)
@@ -646,9 +645,9 @@ def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ(normals,
               meanvec, denom, impa, y_theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
           
-            logprobdiff = logprobs(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
-              logZvec, meanvec, denom).mean(axis=1).sum()
-            elbo.append(logprobdiff)
+            logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
+              logZvec, meanvec, denom)
+            elbos.append(logprobdiff)
             #print(lp - lq)
               
             g_phi = phi_grad(y_phi, m, Ti, normals, denom, y_sigsq, glogZ_phi)
@@ -665,7 +664,7 @@ def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             learn_rate *= 0.99
             t += 1
     if plot:
-        plt.plot(elbo)
+        plt.plot(elbos)
     return theta, phi, alpha, sigsq
 
 def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
@@ -679,7 +678,7 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     '''
     impa = list(np.random.choice(action_space, M))
     N = len(traj_data)
-    elbo = []
+    elbos = []
     phi_m = np.zeros_like(phi)
     theta_m = np.zeros_like(theta)
     alpha_m = np.zeros_like(alpha)
@@ -710,9 +709,9 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ(normals,
               meanvec, denom, impa, y_theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
           
-            logprobdiff = logprobs(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
-              logZvec, meanvec, denom).mean(axis=1).sum()
-            elbo.append(logprobdiff)
+            logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
+              logZvec, meanvec, denom)
+            elbos.append(logprobdiff)
             #print(lp - lq)
               
             g_phi = phi_grad(y_phi, m, Ti, normals, denom, y_sigsq, glogZ_phi)
@@ -750,7 +749,7 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                 
             last_lpd = logprobdiff
     if plot:
-        plt.plot(elbo)
+        plt.plot(elbos)
     return best_theta, best_phi, best_alpha, best_sigsq
 
 def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
@@ -764,7 +763,7 @@ def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     '''
     impa = list(np.random.choice(action_space, M))
     N = len(traj_data)
-    elbo = []
+    elbos = []
     phi_m = np.zeros_like(phi)
     theta_m = np.zeros_like(theta)
     alpha_m = np.zeros_like(alpha)
@@ -793,9 +792,9 @@ def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
               glogZ_phi) = logZ(normals, meanvec, denom, impa, y_theta,
               data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
           
-            logprobdiff = logprobs(state_space, Ti, y_sigsq, gnorm, data, TP, m,
-              normals, R_all, logZvec, meanvec, denom).mean(axis=1).sum()
-            elbo.append(logprobdiff)
+            logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m,
+              normals, R_all, logZvec, meanvec, denom)
+            elbos.append(logprobdiff)
             #print(lp - lq)
               
             g_phi = phi_grad(y_phi, m, Ti, normals, denom, y_sigsq,
@@ -839,7 +838,7 @@ def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                 time_since_best = 0
                 #print('RESET')
     if plot:
-        plt.plot(elbo)
+        plt.plot(elbos)
     return best_theta, best_phi, best_alpha, best_sigsq
 
 def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,

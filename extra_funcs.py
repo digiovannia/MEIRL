@@ -6,6 +6,12 @@ Created on Mon Mar 23 21:04:49 2020
 @author: adigi
 """
 
+
+def theta_grad_det_reg(lam, theta, data, beta, state_space, glogZ_theta, centers_x, centers_y):
+    gradR = grad_lin_rew(data, state_space, centers_x, centers_y) # m x d x Ti 
+    penalty = lam*theta
+    return -glogZ_theta + np.einsum('ij,ikj->k', beta, gradR) - penalty
+
 def MEIRL_det(theta, alpha, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, y_t, update, centers_x,
          centers_y, plot=True):
