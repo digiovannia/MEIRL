@@ -143,7 +143,9 @@ def Qlearn(rate, gam, eps, K, T, state_space, action_space,
     return policy, Q
 
 def value_iter(state_space, action_space, rewards, TP, gam, tol):
-    #Q = np.random.rand(D,D,4)
+    '''
+    Action-value iteration for use when transition dynamics are known.
+    '''
     Q = np.random.rand(D**2, 4)
     delta = np.inf
     expect_rewards = TP.dot(np.ravel(rewards)) # S x A
@@ -153,13 +155,13 @@ def value_iter(state_space, action_space, rewards, TP, gam, tol):
             a = np.random.choice(action_space)
             #st = tuple(state_space[s])
             qval = Q[s,a]
-            Q[s,a] = expect_rewards[s,a] + gam*(TP.dot(Q.max(axis=1)))[s,a] #unsure
+            Q[s,a] = expect_rewards[s,a] + gam*(TP.dot(Q.max(axis=1)))[s,a]
             delta = np.max([delta, abs(qval - Q[s,a])])
     policy = np.zeros((16, 16, 4))
     for i in range(D):
         for j in range(D):
             policy[i,j,np.argmax(Q[(16*i+j)])] = 1
-    return policy, Q
+    return policy, Q.reshape(D, D, 4)
 
 def eta(st):
     '''
@@ -347,21 +349,24 @@ def GD(phi, theta, alpha, sigsq, g_phi, g_theta, g_alpha, g_sigsq, learn_rate):
     return phi, theta, alpha, sigsq
 
 def y_t_nest(phi, phi_m, theta, theta_m, alpha, alpha_m, sigsq, sigsq_m, t):
+    '''
+    Making intermediate iterates for Nesterov acceleration
+    '''
     const = (t-1)/(t+2)
     return (phi - const*(phi - phi_m),
             theta - const*(theta - theta_m),
             alpha - const*(alpha - alpha_m),
             sigsq - const*(sigsq - sigsq_m))
 
-def grad_terms_re(normals, phi, alpha, sigsq, theta, data, R_all,
-             E_all, Ti, m):
+def grad_terms_re(normals, phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m):
     '''
     Computes quantities used in multiple computations of gradients.
     '''
     denom = sigsq + phi[:,1]
     sc_normals = (denom**(1/2))[:,None,None]*normals
     aE = np.einsum('ij,ijk->ik', alpha, E_all) #faster than tensordot
-    meanvec = sc_normals + (sigsq[:,None]*R_all + aE + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:]
+    mn = (sigsq[:,None]*R_all + aE + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:]
+    meanvec = sc_normals + mn
     gvec = sc_normals + (sigsq[:,None]*R_all + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:]
     gnorm = np.einsum('ijk,ijk->ij', gvec, gvec) #faster than tensordotl, but still p slow
     return meanvec, denom, gvec, gnorm
@@ -489,13 +494,14 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                      action_space, B, m, M, Ti, learn_rate, reps, policy, T,
                      rewards, init_policy, init_Q, J, centers_x, centers_y,
                      cr_reps, algo_a, algo_b, random=False):
+    start = datetime.datetime.now()
     s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
     true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards)
     plt.plot(np.cumsum(true_rew), color='b') 
     true_total = np.sum(true_rew)
     totals = [[],[]]
     cols = ['r', 'g']
-    for _ in range(J):
+    for j in range(J):
         ta = algo_a(theta, alpha, sigsq, phi, beta, traj_data, TP,
           state_space, action_space, B, m, M, Ti, learn_rate, reps, centers_x,
           centers_y, plot=False)[0]
@@ -517,7 +523,8 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
               state_space, rewards)
             plt.plot(np.cumsum(est_rew), color=cols[i])
             totals[i].append(np.sum(est_rew))
-        print('.')
+        sec = (datetime.datetime.now() - start).total_seconds()
+        print(str(round((j+1)/J*100, 3)) + '% done: ' + str(round(sec / 60, 3)))
     return true_total, a_total, b_total
 
 def logZ_unif(beta, impa, theta, data, M, TP, action_space, centers_x, centers_y):
@@ -1077,16 +1084,18 @@ def expert_alphas(m):
 # # (4,1)
 
 
-'''
+
 alpha1 = np.array([WEIGHT, 0, 0, 0, 1]) # (1,1)
 alpha2 = np.array([0, 0, WEIGHT, 0, 1]) # (1,4)
 alpha3 = np.array([0, 0, 0, WEIGHT, 1]) # (4,4)
 alpha4 = np.array([0, WEIGHT, 0, 0, 1])
+
 '''
 alpha1 = np.array([0, WEIGHT, 0, 0, 1]) # (1,1)
 alpha2 = np.array([0, 0, WEIGHT, 0, 1]) # (1,4)
 alpha3 = np.array([0, WEIGHT, 0, 0, 1]) # (4,4)
 alpha4 = np.array([0, 0, WEIGHT, 0, 1])
+'''
 
 p = alpha1.shape[0]
 m = 4
@@ -1321,6 +1330,8 @@ To do:
      space correct
      * Write function that stores the hyperparams/settings and saves results from
      evaluation
+     * Compare performance for different split of steps in Ti vs N (length vs
+     number of trajectories)
      
 QUALITATIVE NOTES:
     * The varying-beta model appears to do better than uniform when rewards are
