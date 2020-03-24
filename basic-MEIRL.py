@@ -365,9 +365,9 @@ def grad_terms_re(normals, phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m):
     denom = sigsq + phi[:,1]
     sc_normals = (denom**(1/2))[:,None,None]*normals
     aE = np.einsum('ij,ijk->ik', alpha, E_all) #faster than tensordot
-    mn = (sigsq[:,None]*R_all + aE + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:]
-    meanvec = sc_normals + mn
-    gvec = sc_normals + (sigsq[:,None]*R_all + phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:]
+    mn = sigsq[:,None]*R_all + phi[:,0][:,None]*np.ones((m,Ti))
+    meanvec = sc_normals + (aE + mn)[:,None,:]
+    gvec = sc_normals + mn[:,None,:]
     gnorm = np.einsum('ijk,ijk->ij', gvec, gvec) #faster than tensordotl, but still p slow
     return meanvec, denom, gvec, gnorm
 
