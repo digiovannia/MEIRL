@@ -358,7 +358,7 @@ def y_t_nest(phi, phi_m, theta, theta_m, alpha, alpha_m, sigsq, sigsq_m, t):
             alpha - const*(alpha - alpha_m),
             sigsq - const*(sigsq - sigsq_m))
 
-def grad_terms_re(normals, phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m):
+def grad_terms(normals, phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m):
     '''
     Computes quantities used in multiple computations of gradients.
     '''
@@ -381,18 +381,18 @@ def logprobs(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all,
     lq = -Ti/2*np.log(2*np.pi*denom)[:,None] - epsnorm/2
     return lp - lq
 
-def phi_grad_re(phi, m, Ti, normals, denom, sigsq, glogZ_phi):
+def phi_grad(phi, m, Ti, normals, denom, sigsq, glogZ_phi):
     x = (phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:] + (denom**(1/2))[:,None,None]*normals
     y1 = 1/sigsq[:,None]*x.sum(axis=2)
     y2 = np.einsum('ijk,ijk->ij', normals, x)/((2*sigsq*denom**(1/2))[:,None]) - Ti/(2*denom)[:,None]
     result = -glogZ_phi - np.stack((y1, y2))
     return np.swapaxes(np.mean(result, axis=2), 0, 1)
 
-def alpha_grad_re(glogZ_alpha, E_all, R_all):
+def alpha_grad(glogZ_alpha, E_all, R_all):
     result = -glogZ_alpha + np.einsum('ijk,ik->ij', E_all, R_all)[:,None,:]
     return np.mean(result, axis=1)
 
-def sigsq_grad_re(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all,
+def sigsq_grad(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all,
                   gvec):
     q_grad = -Ti/(2*denom)
     x = -Ti/(2*sigsq) + np.einsum('ij,ij->i', R_all, R_all)
@@ -408,7 +408,7 @@ def log_mean_exp(tensor):
     expo = np.exp(tensor - K[:,:,None,:])
     return np.log(np.mean(expo,axis=2)) + K
 
-def logZ_re(normals, meanvec, denom, impa, theta, data, M, TP,
+def logZ(normals, meanvec, denom, impa, theta, data, M, TP,
             R_all, E_all, action_space, centers_x, centers_y):
     reward_est = lin_rew_func(theta, state_space, centers_x, centers_y)
     # vectorize?
@@ -453,7 +453,7 @@ def logZ_re(normals, meanvec, denom, impa, theta, data, M, TP,
     glogZ_phi = np.array([(numsum_p1/den).sum(axis=2), (numsum_p2/den).sum(axis=2)])
     return logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi
 
-def theta_grad_re(glogZ_theta, data, state_space, R_all, E_all, sigsq, alpha,
+def theta_grad(glogZ_theta, data, state_space, R_all, E_all, sigsq, alpha,
                   centers_x, centers_y):
     '''
     Output m x d
@@ -464,14 +464,6 @@ def theta_grad_re(glogZ_theta, data, state_space, R_all, E_all, sigsq, alpha,
     X = sigsq[:,None]*R_all + np.einsum('ij,ijk->ik', alpha, E_all)
     result = -glogZ_theta + np.einsum('ijk,ik->ij', gradR, X)[:,None,:]
     return np.sum(np.mean(result, axis=1), axis=0)
-
-def total_reward(reps, policy, T, state_space, rewards):
-    reward_list = []
-    for _ in range(reps):
-        s = state_space[np.random.choice(len(state_space))]
-        ret = np.sum(episode(s,T,policy,rewards)[2]) #true reward
-        reward_list.append(ret)
-    return reward_list
 
 def cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards):
     reward_list = []
@@ -649,9 +641,9 @@ def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             data = np.array(traj_data[n]) # m x 2 x Ti
             R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
             normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
-            meanvec, denom, gvec, gnorm = grad_terms_re(normals,
+            meanvec, denom, gvec, gnorm = grad_terms(normals,
               y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
-            logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals,
+            logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ(normals,
               meanvec, denom, impa, y_theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
           
             logprobdiff = logprobs(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
@@ -659,11 +651,11 @@ def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             elbo.append(logprobdiff)
             #print(lp - lq)
               
-            g_phi = phi_grad_re(y_phi, m, Ti, normals, denom, y_sigsq, glogZ_phi)
-            g_theta = theta_grad_re(glogZ_theta, data, state_space, R_all, E_all,
+            g_phi = phi_grad(y_phi, m, Ti, normals, denom, y_sigsq, glogZ_phi)
+            g_theta = theta_grad(glogZ_theta, data, state_space, R_all, E_all,
               y_sigsq, y_alpha, centers_x, centers_y)
-            g_alpha = alpha_grad_re(glogZ_alpha, E_all, R_all)
-            g_sigsq = sigsq_grad_re(glogZ_sigsq, normals, Ti, y_sigsq, gnorm, denom,
+            g_alpha = alpha_grad(glogZ_alpha, E_all, R_all)
+            g_sigsq = sigsq_grad(glogZ_sigsq, normals, Ti, y_sigsq, gnorm, denom,
               R_all, gvec)
           
             phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
@@ -713,9 +705,9 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             
             data = np.array(traj_data[n]) # m x 2 x Ti
             R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
-            meanvec, denom, gvec, gnorm = grad_terms_re(normals,
+            meanvec, denom, gvec, gnorm = grad_terms(normals,
               y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
-            logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals,
+            logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ(normals,
               meanvec, denom, impa, y_theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
           
             logprobdiff = logprobs(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
@@ -723,11 +715,11 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             elbo.append(logprobdiff)
             #print(lp - lq)
               
-            g_phi = phi_grad_re(y_phi, m, Ti, normals, denom, y_sigsq, glogZ_phi)
-            g_theta = theta_grad_re(glogZ_theta, data, state_space, R_all, E_all,
+            g_phi = phi_grad(y_phi, m, Ti, normals, denom, y_sigsq, glogZ_phi)
+            g_theta = theta_grad(glogZ_theta, data, state_space, R_all, E_all,
               y_sigsq, y_alpha, centers_x, centers_y)
-            g_alpha = alpha_grad_re(glogZ_alpha, E_all, R_all)
-            g_sigsq = sigsq_grad_re(glogZ_sigsq, normals, Ti, y_sigsq, gnorm, denom,
+            g_alpha = alpha_grad(glogZ_alpha, E_all, R_all)
+            g_sigsq = sigsq_grad(glogZ_sigsq, normals, Ti, y_sigsq, gnorm, denom,
               R_all, gvec)
           
             phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
@@ -795,10 +787,10 @@ def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             data = np.array(traj_data[n]) # m x 2 x Ti
             R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
             normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
-            meanvec, denom, gvec, gnorm = grad_terms_re(normals,
+            meanvec, denom, gvec, gnorm = grad_terms(normals,
               y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
             (logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq,
-              glogZ_phi) = logZ_re(normals, meanvec, denom, impa, y_theta,
+              glogZ_phi) = logZ(normals, meanvec, denom, impa, y_theta,
               data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
           
             logprobdiff = logprobs(state_space, Ti, y_sigsq, gnorm, data, TP, m,
@@ -806,12 +798,12 @@ def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             elbo.append(logprobdiff)
             #print(lp - lq)
               
-            g_phi = phi_grad_re(y_phi, m, Ti, normals, denom, y_sigsq,
+            g_phi = phi_grad(y_phi, m, Ti, normals, denom, y_sigsq,
               glogZ_phi)
-            g_theta = theta_grad_re(glogZ_theta, data, state_space,
+            g_theta = theta_grad(glogZ_theta, data, state_space,
               R_all, E_all, y_sigsq, y_alpha, centers_x, centers_y)
-            g_alpha = alpha_grad_re(glogZ_alpha, E_all, R_all)
-            g_sigsq = sigsq_grad_re(glogZ_sigsq, normals, Ti, y_sigsq,
+            g_alpha = alpha_grad(glogZ_alpha, E_all, R_all)
+            g_sigsq = sigsq_grad(glogZ_sigsq, normals, Ti, y_sigsq,
               gnorm, denom, R_all, gvec)
           
             phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
