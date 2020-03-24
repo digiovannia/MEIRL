@@ -382,6 +382,17 @@ def evaluate_det_vs_random(theta, alpha, sigsq, phi, TP, reps, policy, T,
         print('.')
     return true_total, det_total, unif_total
 
+def evaluate(reps, policy, T, state_space, rewards, theta_est, init_policy,
+             init_Q, centers_x, centers_y):
+    reward_est = lin_rew_func(theta_est, state_space, centers_x, centers_y)
+    est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
+          action_space, reward_est, init_policy, init_Q)[0]
+    true_rew = cumulative_reward(reps, policy, T, state_space, rewards)
+    est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
+    plt.plot(np.cumsum(true_rew), color='b')
+    plt.plot(np.cumsum(est_rew), color='r')
+    return np.sum(true_rew), np.sum(est_rew)
+
 def evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
                         state_space, action_space, rewards, init_policy,
                         init_Q, J, B, m, M, Ti, learn_rate, traj_data,

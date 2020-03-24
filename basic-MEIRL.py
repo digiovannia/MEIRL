@@ -368,11 +368,12 @@ def grad_terms_re(normals, phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m):
     mn = sigsq[:,None]*R_all + phi[:,0][:,None]*np.ones((m,Ti))
     meanvec = sc_normals + (aE + mn)[:,None,:]
     gvec = sc_normals + mn[:,None,:]
-    gnorm = np.einsum('ijk,ijk->ij', gvec, gvec) #faster than tensordotl, but still p slow
+    gnorm = np.einsum('ijk,ijk->ij', gvec, gvec) #faster than tensordot, but still p slow
     return meanvec, denom, gvec, gnorm
 
-def logprobs(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all, logZvec, meanvec, denom):
-    p1 = np.log(1/len(state_space)) - Ti/2*np.log(2*np.pi*sigsq)[:,None] - 1/(2*sigsq)[:,None]*gnorm
+def logprobs(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all,
+             logZvec, meanvec, denom):
+    p1 = -np.log(len(state_space)) - Ti/2*np.log(2*np.pi*sigsq)[:,None] - 1/(2*sigsq)[:,None]*gnorm
     logT = np.log(traj_TP(data, TP, Ti, m))
     p2 = np.einsum('ijk,ik->ij', meanvec, R_all) - logZvec + np.sum(logT, axis=1)[:,None]
     lp = p1 + p2    
@@ -479,17 +480,6 @@ def cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards):
         reward_list.extend(ret)
     return reward_list
 
-def evaluate(reps, policy, T, state_space, rewards, theta_est, init_policy,
-             init_Q, centers_x, centers_y):
-    reward_est = lin_rew_func(theta_est, state_space, centers_x, centers_y)
-    est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          action_space, reward_est, init_policy, init_Q)[0]
-    true_rew = cumulative_reward(reps, policy, T, state_space, rewards)
-    est_rew = cumulative_reward(reps, est_policy, T, state_space, rewards)
-    plt.plot(np.cumsum(true_rew), color='b')
-    plt.plot(np.cumsum(est_rew), color='r')
-    return np.sum(true_rew), np.sum(est_rew)
-
 def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                      action_space, B, m, M, Ti, learn_rate, reps, policy, T,
                      rewards, init_policy, init_Q, J, centers_x, centers_y,
@@ -525,7 +515,7 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             totals[i].append(np.sum(est_rew))
         sec = (datetime.datetime.now() - start).total_seconds()
         print(str(round((j+1)/J*100, 3)) + '% done: ' + str(round(sec / 60, 3)))
-    return true_total, a_total, b_total
+    return true_total, totals[0], totals[1]
 
 def logZ_unif(beta, impa, theta, data, M, TP, action_space, centers_x, centers_y):
     '''
@@ -1025,10 +1015,10 @@ Changing the above to see if making the experts suboptimal in a larger space
 makes the difference between det and unif more stark
 '''
 M = 20 # number of actions used for importance sampling
-N = 20 #100 #2000 # number of trajectories per expert
+N = 10#20 #100 #2000 # number of trajectories per expert
 J = 10 # should be 30....
 T = 50
-Ti = 20 # length of trajectory
+Ti = 40#20 # length of trajectory
 B = 50#100 # number of betas/normals sampled for expectation
 Q_ITERS = 30000#50000
 learn_rate = 0.0001
@@ -1131,36 +1121,27 @@ opt_policy, Q = value_iter(state_space, action_space, rewards, TP, 0.9, 1e-5)
 '''
 NOTE: SWITCHED GAM to 0.9!
 '''
-          # This seems to converge robustly to optimal policy,
-          # although Q values have some variance in states where
-          # it doesn't really matter
 #visualize_policy(rewards, opt_policy)
 
 phi = np.random.rand(m,2)
 alpha = np.random.normal(size=(m,p), scale=0.05)
 sigsq = np.random.rand(m)
 beta = np.random.rand(m)
-#theta = np.random.normal(size=d)
-theta = np.zeros_like(true_theta)#np.array([0, 0, 0, 0, 0]) 
+theta = np.zeros_like(true_theta)
 
 traj_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
                      init_state_sample, TP, m)
 boltz_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
                      init_state_sample, TP, m, Q)
-'''
-traj_data = make_data_myopic(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
-                     init_state_sample, TP, m)
-boltz_data = make_data_Q(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
-                     init_state_sample, TP, m, Q)
-'''
-
-true_tot, det_tot_p, unif_tot_p = evaluate_det_vs_unif(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, T,
-                        state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, learn_rate, traj_data,
-                        centers_x, centers_y, cr_reps)
 # first index is n=1 to N
 # second index is expert
 # third is states, actions
+
+true_tot, det_tot_p, unif_tot_p = evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
+                     action_space, B, m, M, Ti, learn_rate, reps, opt_policy, T,
+                     rewards, init_policy, init_Q, J, centers_x, centers_y,
+                     cr_reps, MEIRL_det_pos, MEIRL_unif)
+
 theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
          plot=True):
@@ -1197,15 +1178,6 @@ theta_star_u, beta_star_u = MEIRL_unif(theta, alpha, sigsq, phi, beta, boltz_dat
 dumb_data = make_data_myopic(alpha_star_2, sigsq_star_2, lin_rew_func(theta_star_2,
                             state_space, centers_x, centers_y), N, Ti, state_space, action_space,
                             init_state_sample, TP, m)
-
-evaluate(10, opt_policy, 50, state_space, rewards, theta, init_policy,
-             init_Q, centers_x, centers_y)
-
-evaluate(5, opt_policy, 30, state_space, rewards, np.random.normal(size=d), init_policy,
-             init_Q, centers_x, centers_y)
-
-evaluate(10, opt_policy, 50, state_space, rewards, theta_star, init_policy,
-             init_Q, centers_x, centers_y)
 
 #sns.heatmap(lin_rew_func(true_theta, state_space, centers_x, centers_y))
 
@@ -1276,17 +1248,6 @@ true_tot_b, AEVB_tot_b, unif_tot_b = evaluate_vs_uniform(theta, alpha, sigsq, ph
 # **** yeah it widens gap a bit, although not much; now its -273 for true, -320 for a
 # **** very wrong answer
 
-# maybe the problem is just intrinsically hard to the extent that the agent
-# has to infer which combination of expert-wrongness-in-which-locations and
-# true reward is correct. This is pretty nontrivial - could a human even do this?
-
-# maybe the difficulty especially lies with the fact that beta can be negative,
-# so the experts can in some states act exactly anti-optimally
-'''
-Update: tried restricting beta to be positive. Seems that the algo does decently
-well under this restriction, but so does the model where beta is treated as constant!
-'''
-
 # works p well even under misspecification for D = 8
 # doesn't really work on D = 16 grid
 
@@ -1334,6 +1295,8 @@ To do:
      number of trajectories)
      
 QUALITATIVE NOTES:
+    * Good performance is basically elusive in large D MDPs when beta is allowed
+    to be negative.
     * The varying-beta model appears to do better than uniform when rewards are
     sparse *and* states-of-high-expertise by the demonstrators are also sparse,
     *and* the coverage of these states-of-high-expertise is wide (e.g. all 4
@@ -1347,4 +1310,6 @@ QUALITATIVE NOTES:
      unif model a lot more than det, apparently.
     * All the models seem to do better than random even when there are larger
     chunks of the state space on which the demonstrators act randomly.
+    * Slightly slower to train on higher Ti:N ratio, holding Ti*N constant -
+    will see if performance changes, though
 '''
