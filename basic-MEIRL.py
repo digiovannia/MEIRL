@@ -485,225 +485,10 @@ def evaluate(reps, policy, T, state_space, rewards, theta_est, init_policy,
     plt.plot(np.cumsum(est_rew), color='r')
     return np.sum(true_rew), np.sum(est_rew)
 
-def evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
-                        state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, learn_rate, traj_data,
-                        centers_x, centers_y, cr_reps):
-    s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
-    true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards)
-    plt.plot(np.cumsum(true_rew), color='b') 
-    true_total = np.sum(true_rew)
-    AEVB_total = []
-    random_total = []
-    for _ in range(J):
-        theta_star = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, plot=False)[0]
-        reward_est = lin_rew_func(theta_star, state_space, centers_x, centers_y)
-        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-5)[0]
-         #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          #action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
-        plt.plot(np.cumsum(est_rew), color='r')
-        AEVB_total.append(np.sum(est_rew))
-        
-        reward_est = lin_rew_func(np.random.normal(size=d), state_space,
-                                  centers_x, centers_y)
-        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-5)[0]
-        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          #action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
-        plt.plot(np.cumsum(est_rew), color='g')
-        random_total.append(np.sum(est_rew))
-        
-        print('.')
-    return true_total, AEVB_total, random_total
-
-def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
-                        state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, learn_rate, traj_data,
-                        centers_x, centers_y, cr_reps):
-    s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
-    true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards)
-    plt.plot(np.cumsum(true_rew), color='b') 
-    true_total = np.sum(true_rew)
-    AEVB_total = []
-    unif_total = []
-    for _ in range(J):
-        theta_star = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 5, GD, plot=False)[0]
-        reward_est = lin_rew_func(theta_star, state_space, centers_x, centers_y)
-        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-5)[0]
-        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          #action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
-        plt.plot(np.cumsum(est_rew), color='r')
-        AEVB_total.append(np.sum(est_rew))
-        
-        theta_star = MEIRL_unif(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 5, GD, centers_x, centers_y)[0]
-        reward_est = lin_rew_func(theta_star, state_space,
-                                  centers_x, centers_y)
-        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-5)[0]
-         #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          #action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
-        plt.plot(np.cumsum(est_rew), color='g')
-        unif_total.append(np.sum(est_rew))
-        
-        print('.')
-    return true_total, AEVB_total, unif_total
-
-def evaluate_det_vs_unif(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
-                        state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, learn_rate, traj_data,
-                        centers_x, centers_y, cr_reps):
-    s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
-    true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards)
-    plt.plot(np.cumsum(true_rew), color='b') 
-    true_total = np.sum(true_rew)
-    det_total = []
-    unif_total = []
-    for _ in range(J):
-        theta_star = MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps,
-         centers_x, centers_y, plot=False)[0]
-        reward_est = lin_rew_func(theta_star, state_space,
-                                  centers_x, centers_y)
-        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-5)[0]
-        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          #action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
-        plt.plot(np.cumsum(est_rew), color='r')
-        det_total.append(np.sum(est_rew))
-
-        theta_star = MEIRL_unif(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, GD_unif, centers_x, centers_y)[0]
-        reward_est = lin_rew_func(theta_star, state_space,
-                                  centers_x, centers_y)
-        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-5)[0]
-        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          #action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
-        plt.plot(np.cumsum(est_rew), color='g')
-        unif_total.append(np.sum(est_rew))
-        
-        print('.')
-    return true_total, det_total, unif_total
-
-def evaluate_unif_vs_random(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
-                        state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, learn_rate, traj_data,
-                        centers_x, centers_y, cr_reps):
-    s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
-    true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards)
-    plt.plot(np.cumsum(true_rew), color='b') 
-    true_total = np.sum(true_rew)
-    unif_total = []
-    ra_total = []
-    for _ in range(J):
-        theta_star = MEIRL_unif(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, GD_unif, centers_x, centers_y)[0]
-        reward_est = lin_rew_func(theta_star, state_space,
-                                  centers_x, centers_y)
-        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-5)[0]
-        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          #action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
-        plt.plot(np.cumsum(est_rew), color='r')
-        unif_total.append(np.sum(est_rew))
-
-        theta_star = np.random.normal(size=d)
-        reward_est = lin_rew_func(theta_star, state_space,
-                                  centers_x, centers_y)
-        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-5)[0]
-        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          #action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
-        plt.plot(np.cumsum(est_rew), color='g')
-        ra_total.append(np.sum(est_rew))
-        
-        print('.')
-    return true_total, unif_total, ra_total
-
-def evaluate_det_vs_random(theta, alpha, sigsq, phi, TP, reps, policy, T,
-                        state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, learn_rate, traj_data,
-                        centers_x, centers_y, cr_reps):
-    s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
-    true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards)
-    plt.plot(np.cumsum(true_rew), color='b') 
-    true_total = np.sum(true_rew)
-    det_total = []
-    unif_total = []
-    for _ in range(J):
-        theta_star = MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps,
-         centers_x, centers_y, plot=False)[0]
-        reward_est = lin_rew_func(theta_star, state_space,
-                                  centers_x, centers_y)
-        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-5)[0]
-        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-         # action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
-        plt.plot(np.cumsum(est_rew), color='r')
-        det_total.append(np.sum(est_rew))
-
-        reward_est = lin_rew_func(np.random.normal(size=d), state_space,
-                                  centers_x, centers_y)
-        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-5)[0]
-        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-         # action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
-        plt.plot(np.cumsum(est_rew), color='g')
-        unif_total.append(np.sum(est_rew))
-        
-        print('.')
-    return true_total, det_total, unif_total
-
-
-def evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
-                        state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, learn_rate, traj_data,
-                        centers_x, centers_y, cr_reps):
-    s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
-    true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards)
-    plt.plot(np.cumsum(true_rew), color='b') 
-    true_total = np.sum(true_rew)
-    AEVB_total = []
-    det_total = []
-    for _ in range(J):
-        theta_star = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 5, plot=False)[0]
-        reward_est = lin_rew_func(theta_star, state_space, centers_x, centers_y)
-        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-5)[0]
-        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-        #action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
-        plt.plot(np.cumsum(est_rew), color='r')
-        AEVB_total.append(np.sum(est_rew))
-        
-        '''
-        Changing to MEIRL_det_pos here!
-        '''
-        theta_star = MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 5, GD,
-         centers_x, centers_y, plot=False)[0]
-        reward_est = lin_rew_func(theta_star, state_space,
-                                  centers_x, centers_y)
-        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-5)[0]
-        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-         # action_space, reward_est, init_policy, init_Q)[0]
-        est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
-        plt.plot(np.cumsum(est_rew), color='g')
-        det_total.append(np.sum(est_rew))
-        
-        print('.')
-    return true_total, AEVB_total, det_total
-
 def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                      action_space, B, m, M, Ti, learn_rate, reps, policy, T,
                      rewards, init_policy, init_Q, J, centers_x, centers_y,
-                     cr_reps, algo_a, algo_b):
+                     cr_reps, algo_a, algo_b, random=False):
     s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
     true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards)
     plt.plot(np.cumsum(true_rew), color='b') 
@@ -714,9 +499,12 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
         ta = algo_a(theta, alpha, sigsq, phi, beta, traj_data, TP,
           state_space, action_space, B, m, M, Ti, learn_rate, reps, centers_x,
           centers_y, plot=False)[0]
-        tb = algo_b(theta, alpha, sigsq, phi, beta,
-          traj_data, TP, state_space, action_space, B, m, M, Ti, learn_rate,
-          reps, centers_x, centers_y, plot=False)[0]
+        if random:
+            tb = np.random.normal(size=d)
+        else:
+            tb = algo_b(theta, alpha, sigsq, phi, beta,
+              traj_data, TP, state_space, action_space, B, m, M, Ti, learn_rate,
+              reps, centers_x, centers_y, plot=False)[0]
         theta_stars = [ta, tb]
         for i in range(2):
             reward_est = lin_rew_func(theta_stars[i], state_space, centers_x,
@@ -1400,14 +1188,6 @@ theta_star_u, beta_star_u = MEIRL_unif(theta, alpha, sigsq, phi, beta, boltz_dat
 dumb_data = make_data_myopic(alpha_star_2, sigsq_star_2, lin_rew_func(theta_star_2,
                             state_space, centers_x, centers_y), N, Ti, state_space, action_space,
                             init_state_sample, TP, m)
-
-phi_star_b, theta_star_b, alpha_star_b, sigsq_star_b = AEVB(theta, alpha, sigsq, phi, boltz_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, GD)
-theta_star_u, beta_star_u = MEIRL_unif(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, GD_unif, centers_x, centers_y)
-
-phi_star_AR, theta_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, GD)
 
 evaluate(10, opt_policy, 50, state_space, rewards, theta, init_policy,
              init_Q, centers_x, centers_y)
