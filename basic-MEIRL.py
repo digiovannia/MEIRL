@@ -327,9 +327,6 @@ def GD(phi, theta, alpha, sigsq, g_phi, g_theta, g_alpha, g_sigsq, learn_rate):
     sigsq = np.maximum(sigsq + learn_rate*g_sigsq, 0.01)
     return phi, theta, alpha, sigsq
 
-def y_t_GD(phi, phi_m, theta, theta_m, alpha, alpha_m, sigsq, sigsq_m, t):
-    return phi, theta, alpha, sigsq
-
 def y_t_nest(phi, phi_m, theta, theta_m, alpha, alpha_m, sigsq, sigsq_m, t):
     const = (t-1)/(t+2)
     return (phi - const*(phi - phi_m),
@@ -481,7 +478,7 @@ def evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
     random_total = []
     for _ in range(J):
         theta_star = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, y_t_nest, GD, plot=False)[0]
+         action_space, B, m, M, Ti, learn_rate, reps, GD, plot=False)[0]
         reward_est = lin_rew_func(theta_star, state_space, centers_x, centers_y)
         est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
           action_space, reward_est, init_policy, init_Q)[0]
@@ -510,7 +507,7 @@ def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
     unif_total = []
     for _ in range(J):
         theta_star = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 5, y_t_nest, GD, plot=False)[0]
+         action_space, B, m, M, Ti, learn_rate, 5, GD, plot=False)[0]
         reward_est = lin_rew_func(theta_star, state_space, centers_x, centers_y)
         est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
           action_space, reward_est, init_policy, init_Q)[0]
@@ -519,7 +516,7 @@ def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
         AEVB_total.append(np.sum(est_rew))
         
         theta_star = MEIRL_unif(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 5, y_t_nest_unif, GD, centers_x, centers_y)[0]
+         action_space, B, m, M, Ti, learn_rate, 5, GD, centers_x, centers_y)[0]
         reward_est = lin_rew_func(theta_star, state_space,
                                   centers_x, centers_y)
         est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
@@ -541,7 +538,7 @@ def evaluate_det_vs_unif(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
     unif_total = []
     for _ in range(J):
         theta_star = MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, y_t_nest_unif, GD,
+         action_space, B, m, M, Ti, learn_rate, reps, GD,
          centers_x, centers_y, plot=False)[0]
         reward_est = lin_rew_func(theta_star, state_space,
                                   centers_x, centers_y)
@@ -552,7 +549,7 @@ def evaluate_det_vs_unif(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
         det_total.append(np.sum(est_rew))
 
         theta_star = MEIRL_unif(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, y_t_nest_unif, GD_unif, centers_x, centers_y)[0]
+         action_space, B, m, M, Ti, learn_rate, reps, GD_unif, centers_x, centers_y)[0]
         reward_est = lin_rew_func(theta_star, state_space,
                                   centers_x, centers_y)
         est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
@@ -574,7 +571,7 @@ def evaluate_unif_vs_random(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
     ra_total = []
     for _ in range(J):
         theta_star = MEIRL_unif(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, y_t_nest_unif, GD_unif, centers_x, centers_y)[0]
+         action_space, B, m, M, Ti, learn_rate, reps, GD_unif, centers_x, centers_y)[0]
         reward_est = lin_rew_func(theta_star, state_space,
                                   centers_x, centers_y)
         est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
@@ -605,7 +602,7 @@ def evaluate_det_vs_random(theta, alpha, sigsq, phi, TP, reps, policy, T,
     unif_total = []
     for _ in range(J):
         theta_star = MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, y_t_nest_unif, GD,
+         action_space, B, m, M, Ti, learn_rate, reps, GD,
          centers_x, centers_y, plot=False)[0]
         reward_est = lin_rew_func(theta_star, state_space,
                                   centers_x, centers_y)
@@ -637,7 +634,7 @@ def evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
     det_total = []
     for _ in range(J):
         theta_star = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 5, y_t_nest, GD, plot=False)[0]
+         action_space, B, m, M, Ti, learn_rate, 5, GD, plot=False)[0]
         reward_est = lin_rew_func(theta_star, state_space, centers_x, centers_y)
         est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
           action_space, reward_est, init_policy, init_Q)[0]
@@ -649,7 +646,7 @@ def evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
         Changing to MEIRL_det_pos here!
         '''
         theta_star = MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 5, y_t_nest_unif, GD,
+         action_space, B, m, M, Ti, learn_rate, 5, GD,
          centers_x, centers_y, plot=False)[0]
         reward_est = lin_rew_func(theta_star, state_space,
                                   centers_x, centers_y)
@@ -767,7 +764,7 @@ def loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec):
     return -logZvec + logT + np.einsum('ij,ij->i', beta, R_all)
 
 def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, y_t, update,
+         action_space, B, m, M, Ti, learn_rate, reps, update,
          plot=True):
     '''
     y_t is the function used to define modified iterate for Nesterov, if
@@ -787,7 +784,7 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
     for _ in range(reps):
         permut = list(np.random.permutation(range(N)))
         for n in permut:
-            y_phi, y_theta, y_alpha, y_sigsq = y_t(phi, phi_m, theta, theta_m,
+            y_phi, y_theta, y_alpha, y_sigsq = y_t_nest(phi, phi_m, theta, theta_m,
               alpha, alpha_m, sigsq, sigsq_m, t)
             data = np.array(traj_data[n]) # m x 2 x Ti
             R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
@@ -820,7 +817,7 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
     return theta, phi, alpha, sigsq
 
 def AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, y_t, update,
+         action_space, B, m, M, Ti, learn_rate, reps, update,
          plot=True):
     '''
     y_t is the function used to define modified iterate for Nesterov, if
@@ -905,7 +902,7 @@ def AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
     return best_theta, best_phi, best_alpha, best_sigsq
 
 def ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, y_t, update,
+         action_space, B, m, M, Ti, learn_rate, reps, update,
          plot=True):
     '''
     y_t is the function used to define modified iterate for Nesterov, if
@@ -933,7 +930,7 @@ def ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
         permut = list(np.random.permutation(range(N)))
         for n in permut:
             time_since_best += 1
-            y_phi, y_theta, y_alpha, y_sigsq = y_t(phi, phi_m, theta,
+            y_phi, y_theta, y_alpha, y_sigsq = y_t_nest(phi, phi_m, theta,
               theta_m, alpha, alpha_m, sigsq, sigsq_m, t)
             data = np.array(traj_data[n]) # m x 2 x Ti
             R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
@@ -994,10 +991,30 @@ def ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
     return best_theta, best_phi, best_alpha, best_sigsq
 
 def evaluate_general():
-    theta_star = algo_a
+    '''
+    theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, reps, y_t, update,
+         plot=True
+         
+    theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, reps, y_t, update,
+         plot=True
+         
+    theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, reps, y_t, update,
+         plot=True
+         
+    theta, beta, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, reps, y_t, update, centers_x, centers_y
+         
+    theta, beta, alpha, sigsq, phi, traj_data, TP, state_space, action_space,
+    B, m, M, Ti, learn_rate, reps
+    '''
+    theta_star = algo_a(theta, beta, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, reps, update, centers_x, centers_y)
 
 def MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, y_t, update, centers_x,
+         action_space, B, m, M, Ti, learn_rate, reps, update, centers_x,
          centers_y, plot=True):
     '''
     y_t is the function used to define modified iterate for Nesterov, if
@@ -1061,73 +1078,8 @@ def MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
         plt.plot(lik)
     return best_theta, best_alpha
 
-def MEIRL_det_reg(lam, theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, y_t, update, centers_x,
-         centers_y, plot=True):
-    '''
-    y_t is the function used to define modified iterate for Nesterov, if
-    applicable
-    
-    update is e.g. GD or Adam
-    '''
-    impa = list(np.random.choice(action_space, M))
-    N = len(traj_data)
-    lik = []
-    theta_m = np.zeros_like(theta)
-    alpha_m = np.zeros_like(alpha)
-    y_theta = theta.copy()
-    y_alpha = alpha.copy()
-    best = -np.inf
-    best_theta = theta_m.copy()
-    best_alpha = alpha_m.copy()
-    tm = 1
-    last_lik = -np.inf
-    # while error > eps:
-    for _ in range(reps):
-        permut = list(np.random.permutation(range(N)))
-        for n in permut:
-            t = 1/2*(1 + np.sqrt(1 + 4*tm**2))
-            
-            data = np.array(traj_data[n]) # m x 2 x Ti
-            R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
-            beta = np.einsum('ij,ijk->ik', y_alpha, E_all)
-            
-            logZvec, glogZ_theta, glogZ_alpha = logZ_det(beta,
-              impa, y_theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
-          
-            loglikelihood = loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec).sum()
-            lik.append(loglikelihood)
-              
-            g_theta = theta_grad_det_reg(lam, y_theta, data, beta, state_space, glogZ_theta, centers_x, centers_y)
-            g_alpha = alpha_grad_det(glogZ_alpha, R_all, E_all)
-          
-            theta_m, alpha_m, = theta, alpha
-            theta = y_theta + learn_rate*g_theta
-            alpha = y_alpha + learn_rate*g_alpha
-            
-            mult = (tm - 1)/t
-            y_theta = theta + mult*(theta - theta_m)
-            y_alpha = alpha + mult*(alpha - alpha_m)
-            
-            learn_rate *= 0.99
-            tm = t
-            
-            if loglikelihood > best:
-                best = loglikelihood
-                best_theta = y_theta.copy()
-                best_alpha = y_alpha.copy()
-            elif loglikelihood < last_lik:
-                y_theta = theta.copy()
-                y_alpha = alpha.copy()
-                tm = 1
-                
-            last_lik = loglikelihood
-    if plot:
-        plt.plot(lik)
-    return best_theta, best_alpha
-
 def MEIRL_unif(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, y_t, update, centers_x, centers_y):
+         action_space, B, m, M, Ti, learn_rate, reps, update, centers_x, centers_y):
     '''
     y_t is the function used to define modified iterate for Nesterov, if
     applicable
@@ -1143,7 +1095,7 @@ def MEIRL_unif(theta, beta, traj_data, TP, state_space,
     for _ in range(reps):
         permut = list(np.random.permutation(range(N)))
         for n in permut:
-            y_theta, y_beta = y_t(theta, theta_m,
+            y_theta, y_beta = y_t_nest_unif(theta, theta_m,
               beta, beta_m, t)
             data = np.array(traj_data[n]) # m x 2 x Ti
             R_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)[0]
@@ -1359,37 +1311,37 @@ true_tot, det_tot_p, unif_tot_p = evaluate_det_vs_unif(theta, alpha, sigsq, phi,
 
 #regular
 phi_star, theta_star, alpha_star, sigsq_star = ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, GD)
+         action_space, B, m, M, Ti, learn_rate, 1, GD)
 phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, GD)
+         action_space, B, m, M, Ti, learn_rate, 1, GD)
 theta_star_d, alpha_star_d = MEIRL_det(theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, GD, centers_x,
+         action_space, B, m, M, Ti, learn_rate, 1, GD, centers_x,
          centers_y)
 theta_star_p, alpha_star_p = MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest_unif, GD, centers_x,
+         action_space, B, m, M, Ti, learn_rate, 1, GD, centers_x,
          centers_y)
 phi_star_AR, theta_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, GD)
+         action_space, B, m, M, Ti, learn_rate, 1, GD)
 theta_star_u, beta_star_u = MEIRL_unif(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest_unif, GD_unif, centers_x, centers_y)
+         action_space, B, m, M, Ti, learn_rate, 1, GD_unif, centers_x, centers_y)
 # these all seem to do terribly on seed 10, except when sigsq is 0.01 rather than 2 -
 # then MEIRL_det_pos works quite well 
 
 #boltz - FIX THIS
 phi_star_b, theta_star_b, alpha_star_b, sigsq_star_b = ann_AEVB(theta, alpha, sigsq, phi, boltz_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, GD)
+         action_space, B, m, M, Ti, learn_rate, 1, GD)
 phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, GD)
+         action_space, B, m, M, Ti, learn_rate, 1, GD)
 theta_star_d, alpha_star_d = MEIRL_det(theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, GD, centers_x,
+         action_space, B, m, M, Ti, learn_rate, 1, GD, centers_x,
          centers_y)
 theta_star_p, alpha_star_p = MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest_unif, GD, centers_x,
+         action_space, B, m, M, Ti, learn_rate, 1, GD, centers_x,
          centers_y)
 phi_star_AR, theta_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, GD)
+         action_space, B, m, M, Ti, learn_rate, 1, GD)
 theta_star_u, beta_star_u = MEIRL_unif(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest_unif, GD_unif, centers_x, centers_y)
+         action_space, B, m, M, Ti, learn_rate, 1, GD_unif, centers_x, centers_y)
 
 # see_trajectory(rewards, np.array(traj_data[0])[0,0])
 
@@ -1400,15 +1352,15 @@ dumb_data = make_data_myopic(alpha_star_2, sigsq_star_2, lin_rew_func(theta_star
                             init_state_sample, TP, m)
 
 phi_star_b, theta_star_b, alpha_star_b, sigsq_star_b = AEVB(theta, alpha, sigsq, phi, boltz_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, GD)
+         action_space, B, m, M, Ti, learn_rate, 1, GD)
 theta_star_d, alpha_star_d = MEIRL_det(theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, GD, centers_x,
+         action_space, B, m, M, Ti, learn_rate, 1, GD, centers_x,
          centers_y)
 theta_star_u, beta_star_u = MEIRL_unif(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest_unif, GD_unif, centers_x, centers_y)
+         action_space, B, m, M, Ti, learn_rate, 1, GD_unif, centers_x, centers_y)
 
 phi_star_AR, theta_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest, GD)
+         action_space, B, m, M, Ti, learn_rate, 1, GD)
 
 evaluate(10, opt_policy, 50, state_space, rewards, theta, init_policy,
              init_Q, centers_x, centers_y)
@@ -1426,7 +1378,7 @@ Testing against constant-beta model
 '''
 
 theta_s, beta_s = MEIRL_unif(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, y_t_nest_unif, GD_unif, centers_x, centers_y)
+         action_space, B, m, M, Ti, learn_rate, 1, GD_unif, centers_x, centers_y)
 
 true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
