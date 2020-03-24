@@ -142,6 +142,25 @@ def Qlearn(rate, gam, eps, K, T, state_space, action_space,
             policy[i,j,np.argmax(Q[i,j])] = 1
     return policy, Q
 
+def value_iter(state_space, action_space, rewards, TP, gam, tol):
+    #Q = np.random.rand(D,D,4)
+    Q = np.random.rand(D**2, 4)
+    delta = np.inf
+    expect_rewards = TP.dot(np.ravel(rewards)) # S x A
+    while delta > tol:
+        delta = 0
+        for s in range(len(state_space)):
+            a = np.random.choice(action_space)
+            #st = tuple(state_space[s])
+            qval = Q[s,a]
+            Q[s,a] = expect_rewards[s,a] + gam*(TP.dot(Q.max(axis=1)))[s,a] #unsure
+            delta = np.max([delta, abs(qval - Q[s,a])])
+    policy = np.zeros((16, 16, 4))
+    for i in range(D):
+        for j in range(D):
+            policy[i,j,np.argmax(Q[(16*i+j)])] = 1
+    return policy, Q
+
 def eta(st):
     '''
     Features for beta function
@@ -480,16 +499,18 @@ def evaluate_vs_random(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
         theta_star = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, GD, plot=False)[0]
         reward_est = lin_rew_func(theta_star, state_space, centers_x, centers_y)
-        est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          action_space, reward_est, init_policy, init_Q)[0]
+        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-4)[0]
+         #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
+          #action_space, reward_est, init_policy, init_Q)[0]
         est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='r')
         AEVB_total.append(np.sum(est_rew))
         
         reward_est = lin_rew_func(np.random.normal(size=d), state_space,
                                   centers_x, centers_y)
-        est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          action_space, reward_est, init_policy, init_Q)[0]
+        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-4)[0]
+        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
+          #action_space, reward_est, init_policy, init_Q)[0]
         est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='g')
         random_total.append(np.sum(est_rew))
@@ -509,8 +530,9 @@ def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
         theta_star = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 5, GD, plot=False)[0]
         reward_est = lin_rew_func(theta_star, state_space, centers_x, centers_y)
-        est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          action_space, reward_est, init_policy, init_Q)[0]
+        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-4)[0]
+        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
+          #action_space, reward_est, init_policy, init_Q)[0]
         est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='r')
         AEVB_total.append(np.sum(est_rew))
@@ -519,8 +541,9 @@ def evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
          action_space, B, m, M, Ti, learn_rate, 5, GD, centers_x, centers_y)[0]
         reward_est = lin_rew_func(theta_star, state_space,
                                   centers_x, centers_y)
-        est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          action_space, reward_est, init_policy, init_Q)[0]
+        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-4)[0]
+         #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
+          #action_space, reward_est, init_policy, init_Q)[0]
         est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='g')
         unif_total.append(np.sum(est_rew))
@@ -542,8 +565,9 @@ def evaluate_det_vs_unif(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
          centers_x, centers_y, plot=False)[0]
         reward_est = lin_rew_func(theta_star, state_space,
                                   centers_x, centers_y)
-        est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          action_space, reward_est, init_policy, init_Q)[0]
+        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-4)[0]
+        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
+          #action_space, reward_est, init_policy, init_Q)[0]
         est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='r')
         det_total.append(np.sum(est_rew))
@@ -552,8 +576,9 @@ def evaluate_det_vs_unif(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
          action_space, B, m, M, Ti, learn_rate, reps, GD_unif, centers_x, centers_y)[0]
         reward_est = lin_rew_func(theta_star, state_space,
                                   centers_x, centers_y)
-        est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          action_space, reward_est, init_policy, init_Q)[0]
+        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-4)[0]
+        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
+          #action_space, reward_est, init_policy, init_Q)[0]
         est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='g')
         unif_total.append(np.sum(est_rew))
@@ -574,8 +599,9 @@ def evaluate_unif_vs_random(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
          action_space, B, m, M, Ti, learn_rate, reps, GD_unif, centers_x, centers_y)[0]
         reward_est = lin_rew_func(theta_star, state_space,
                                   centers_x, centers_y)
-        est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          action_space, reward_est, init_policy, init_Q)[0]
+        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-4)[0]
+        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
+          #action_space, reward_est, init_policy, init_Q)[0]
         est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='r')
         unif_total.append(np.sum(est_rew))
@@ -583,8 +609,9 @@ def evaluate_unif_vs_random(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
         theta_star = np.random.normal(size=d)
         reward_est = lin_rew_func(theta_star, state_space,
                                   centers_x, centers_y)
-        est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          action_space, reward_est, init_policy, init_Q)[0]
+        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-4)[0]
+        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
+          #action_space, reward_est, init_policy, init_Q)[0]
         est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='g')
         ra_total.append(np.sum(est_rew))
@@ -606,16 +633,18 @@ def evaluate_det_vs_random(theta, alpha, sigsq, phi, TP, reps, policy, T,
          centers_x, centers_y, plot=False)[0]
         reward_est = lin_rew_func(theta_star, state_space,
                                   centers_x, centers_y)
-        est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          action_space, reward_est, init_policy, init_Q)[0]
+        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-4)[0]
+        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
+         # action_space, reward_est, init_policy, init_Q)[0]
         est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='r')
         det_total.append(np.sum(est_rew))
 
         reward_est = lin_rew_func(np.random.normal(size=d), state_space,
                                   centers_x, centers_y)
-        est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          action_space, reward_est, init_policy, init_Q)[0]
+        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-4)[0]
+        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
+         # action_space, reward_est, init_policy, init_Q)[0]
         est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='g')
         unif_total.append(np.sum(est_rew))
@@ -636,8 +665,9 @@ def evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
         theta_star = AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 5, GD, plot=False)[0]
         reward_est = lin_rew_func(theta_star, state_space, centers_x, centers_y)
-        est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          action_space, reward_est, init_policy, init_Q)[0]
+        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-4)[0]
+        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
+        #action_space, reward_est, init_policy, init_Q)[0]
         est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='r')
         AEVB_total.append(np.sum(est_rew))
@@ -650,8 +680,9 @@ def evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
          centers_x, centers_y, plot=False)[0]
         reward_est = lin_rew_func(theta_star, state_space,
                                   centers_x, centers_y)
-        est_policy = Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-          action_space, reward_est, init_policy, init_Q)[0]
+        est_policy = value_iter(state_space, action_space, reward_est, TP, 0.9, 1e-4)[0]
+        #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
+         # action_space, reward_est, init_policy, init_Q)[0]
         est_rew = cumulative_reward(s_list, cr_reps, est_policy, T, state_space, rewards)
         plt.plot(np.cumsum(est_rew), color='g')
         det_total.append(np.sum(est_rew))
@@ -764,7 +795,7 @@ def loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec):
     return -logZvec + logT + np.einsum('ij,ij->i', beta, R_all)
 
 def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, update,
+         action_space, B, m, M, Ti, learn_rate, reps,
          plot=True):
     '''
     y_t is the function used to define modified iterate for Nesterov, if
@@ -807,7 +838,7 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
               R_all, gvec)
           
             phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
-            phi, theta, alpha, sigsq = update(y_phi, y_theta, y_alpha, y_sigsq, g_phi,
+            phi, theta, alpha, sigsq = GD(y_phi, y_theta, y_alpha, y_sigsq, g_phi,
               g_theta, g_alpha, g_sigsq, learn_rate)
             
             learn_rate *= 0.99
@@ -817,7 +848,7 @@ def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
     return theta, phi, alpha, sigsq
 
 def AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, update,
+         action_space, B, m, M, Ti, learn_rate, reps,
          plot=True):
     '''
     y_t is the function used to define modified iterate for Nesterov, if
@@ -871,7 +902,7 @@ def AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
               R_all, gvec)
           
             phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
-            phi, theta, alpha, sigsq = update(y_phi, y_theta, y_alpha, y_sigsq, g_phi,
+            phi, theta, alpha, sigsq = GD(y_phi, y_theta, y_alpha, y_sigsq, g_phi,
               g_theta, g_alpha, g_sigsq, learn_rate)
             
             mult = (tm - 1)/t
@@ -902,7 +933,7 @@ def AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
     return best_theta, best_phi, best_alpha, best_sigsq
 
 def ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, update,
+         action_space, B, m, M, Ti, learn_rate, reps,
          plot=True):
     '''
     y_t is the function used to define modified iterate for Nesterov, if
@@ -955,7 +986,7 @@ def ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
               gnorm, denom, R_all, gvec)
           
             phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
-            phi, theta, alpha, sigsq = update(y_phi, y_theta, y_alpha,
+            phi, theta, alpha, sigsq = GD(y_phi, y_theta, y_alpha,
               y_sigsq, g_phi, g_theta, g_alpha, g_sigsq, learn_rate)
 
             if logprobdiff > best:
@@ -990,7 +1021,11 @@ def ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
         plt.plot(elbo)
     return best_theta, best_phi, best_alpha, best_sigsq
 
-def evaluate_general():
+def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
+                     action_space, B, m, M, Ti, learn_rate, reps, policy, T,
+                        rewards, init_policy,
+                        init_Q, J,
+                        centers_x, centers_y, cr_reps):
     '''
     theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, y_t, update,
@@ -1272,8 +1307,9 @@ ex_sigsqs = np.array([sigsq1, sigsq2, sigsq3, sigsq4])
 init_det_policy = np.random.choice([0,1,2,3], size=(D,D))
 init_policy = stoch_policy(init_det_policy, action_space)
 init_Q = np.random.rand(D,D,4)
-opt_policy, Q = Qlearn(0.5, 0.9, 0.1, Q_ITERS, 20, state_space,
-          action_space, rewards, init_policy, init_Q)
+opt_policy, Q = value_iter(state_space, action_space, rewards, TP, 0.9, 1e-4)
+#Qlearn(0.5, 0.9, 0.1, Q_ITERS, 20, state_space,
+ #         action_space, rewards, init_policy, init_Q)
 # takes about 1 min
 '''
 NOTE: SWITCHED GAM to 0.9!
@@ -1314,9 +1350,6 @@ phi_star, theta_star, alpha_star, sigsq_star = ann_AEVB(theta, alpha, sigsq, phi
          action_space, B, m, M, Ti, learn_rate, 1, GD)
 phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 1, GD)
-theta_star_d, alpha_star_d = MEIRL_det(theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, GD, centers_x,
-         centers_y)
 theta_star_p, alpha_star_p = MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 1, GD, centers_x,
          centers_y)
@@ -1332,9 +1365,6 @@ phi_star_b, theta_star_b, alpha_star_b, sigsq_star_b = ann_AEVB(theta, alpha, si
          action_space, B, m, M, Ti, learn_rate, 1, GD)
 phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 1, GD)
-theta_star_d, alpha_star_d = MEIRL_det(theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, GD, centers_x,
-         centers_y)
 theta_star_p, alpha_star_p = MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 1, GD, centers_x,
          centers_y)
@@ -1353,9 +1383,6 @@ dumb_data = make_data_myopic(alpha_star_2, sigsq_star_2, lin_rew_func(theta_star
 
 phi_star_b, theta_star_b, alpha_star_b, sigsq_star_b = AEVB(theta, alpha, sigsq, phi, boltz_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 1, GD)
-theta_star_d, alpha_star_d = MEIRL_det(theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, GD, centers_x,
-         centers_y)
 theta_star_u, beta_star_u = MEIRL_unif(theta, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, 1, GD_unif, centers_x, centers_y)
 
