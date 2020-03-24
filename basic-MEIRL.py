@@ -1,6 +1,7 @@
 import numpy as np 
 import matplotlib.pyplot as plt
 import seaborn as sns
+import datetime
 
 '''
 A simple DxD gridworld to test out multiple-experts IRL.
@@ -335,234 +336,6 @@ def y_t_nest(phi, phi_m, theta, theta_m, alpha, alpha_m, sigsq, sigsq_m, t):
             theta - const*(theta - theta_m),
             alpha - const*(alpha - alpha_m),
             sigsq - const*(sigsq - sigsq_m))
-
-def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, y_t, update,
-         plot=True):
-    '''
-    y_t is the function used to define modified iterate for Nesterov, if
-    applicable
-    
-    update is e.g. GD or Adam
-    '''
-    impa = list(np.random.choice(action_space, M))
-    N = len(traj_data)
-    elbo = []
-    phi_m = np.zeros_like(phi)
-    theta_m = np.zeros_like(theta)
-    alpha_m = np.zeros_like(alpha)
-    sigsq_m = np.zeros_like(sigsq)
-    t = 1
-    # while error > eps:
-    for _ in range(reps):
-        permut = list(np.random.permutation(range(N)))
-        for n in permut:
-            y_phi, y_theta, y_alpha, y_sigsq = y_t(phi, phi_m, theta, theta_m,
-              alpha, alpha_m, sigsq, sigsq_m, t)
-            data = np.array(traj_data[n]) # m x 2 x Ti
-            R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
-            normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
-            meanvec, denom, gvec, gnorm = grad_terms_re(normals,
-              y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
-            logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals,
-              meanvec, denom, impa, y_theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
-          
-            logprobdiff = logprobs(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
-              logZvec, meanvec, denom).mean(axis=1).sum()
-            elbo.append(logprobdiff)
-            #print(lp - lq)
-              
-            g_phi = phi_grad_re(y_phi, m, Ti, normals, denom, y_sigsq, glogZ_phi)
-            g_theta = theta_grad_re(glogZ_theta, data, state_space, R_all, E_all,
-              y_sigsq, y_alpha, centers_x, centers_y)
-            g_alpha = alpha_grad_re(glogZ_alpha, E_all, R_all)
-            g_sigsq = sigsq_grad_re(glogZ_sigsq, normals, Ti, y_sigsq, gnorm, denom,
-              R_all, gvec)
-          
-            phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
-            phi, theta, alpha, sigsq = update(y_phi, y_theta, y_alpha, y_sigsq, g_phi,
-              g_theta, g_alpha, g_sigsq, learn_rate)
-            
-            learn_rate *= 0.99
-            t += 1
-    if plot:
-        plt.plot(elbo)
-    return phi, theta, alpha, sigsq
-
-def AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, y_t, update,
-         plot=True):
-    '''
-    y_t is the function used to define modified iterate for Nesterov, if
-    applicable
-    
-    update is e.g. GD or Adam
-    '''
-    impa = list(np.random.choice(action_space, M))
-    N = len(traj_data)
-    elbo = []
-    phi_m = np.zeros_like(phi)
-    theta_m = np.zeros_like(theta)
-    alpha_m = np.zeros_like(alpha)
-    sigsq_m = np.zeros_like(sigsq)
-    y_phi = phi.copy()
-    y_theta = theta.copy()
-    y_alpha = alpha.copy()
-    y_sigsq = sigsq.copy()
-    best = -np.inf
-    best_phi = phi_m.copy()
-    best_theta = theta_m.copy()
-    best_alpha = alpha_m.copy()
-    best_sigsq = sigsq_m.copy()
-    tm = 1
-    last_lpd = -np.inf
-    # maybe don't need to resample normals every time? testing this out
-    normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
-    # while error > eps:
-    for _ in range(reps):
-        permut = list(np.random.permutation(range(N)))
-        for n in permut:
-            t = 1/2*(1 + np.sqrt(1 + 4*tm**2))
-            
-            data = np.array(traj_data[n]) # m x 2 x Ti
-            R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
-            meanvec, denom, gvec, gnorm = grad_terms_re(normals,
-              y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
-            logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals,
-              meanvec, denom, impa, y_theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
-          
-            logprobdiff = logprobs(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
-              logZvec, meanvec, denom).mean(axis=1).sum()
-            elbo.append(logprobdiff)
-            #print(lp - lq)
-              
-            g_phi = phi_grad_re(y_phi, m, Ti, normals, denom, y_sigsq, glogZ_phi)
-            g_theta = theta_grad_re(glogZ_theta, data, state_space, R_all, E_all,
-              y_sigsq, y_alpha, centers_x, centers_y)
-            g_alpha = alpha_grad_re(glogZ_alpha, E_all, R_all)
-            g_sigsq = sigsq_grad_re(glogZ_sigsq, normals, Ti, y_sigsq, gnorm, denom,
-              R_all, gvec)
-          
-            phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
-            phi, theta, alpha, sigsq = update(y_phi, y_theta, y_alpha, y_sigsq, g_phi,
-              g_theta, g_alpha, g_sigsq, learn_rate)
-            
-            mult = (tm - 1)/t
-            y_phi = phi + mult*(phi - phi_m)
-            y_theta = theta + mult*(theta - theta_m)
-            y_alpha = alpha + mult*(alpha - alpha_m)
-            y_sigsq = sigsq + mult*(sigsq - sigsq_m)
-            
-            learn_rate *= 0.99
-            tm = t
-            
-            if logprobdiff > best:
-                best = logprobdiff
-                best_phi = y_phi.copy()
-                best_theta = y_theta.copy()
-                best_alpha = y_alpha.copy()
-                best_sigsq = y_sigsq.copy()
-            elif logprobdiff < last_lpd:
-                y_phi = phi.copy()
-                y_theta = theta.copy()
-                y_alpha = alpha.copy()
-                y_sigsq = sigsq.copy()
-                tm = 1
-                
-            last_lpd = logprobdiff
-    if plot:
-        plt.plot(elbo)
-    return best_phi, best_theta, best_alpha, best_sigsq
-
-def ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, y_t, update,
-         plot=True):
-    '''
-    y_t is the function used to define modified iterate for Nesterov, if
-    applicable
-    
-    update is e.g. GD or Adam
-    '''
-    impa = list(np.random.choice(action_space, M))
-    N = len(traj_data)
-    elbo = []
-    phi_m = np.zeros_like(phi)
-    theta_m = np.zeros_like(theta)
-    alpha_m = np.zeros_like(alpha)
-    sigsq_m = np.zeros_like(sigsq)
-    best = -np.inf
-    best_phi = phi_m.copy()
-    best_theta = theta_m.copy()
-    best_alpha = alpha_m.copy()
-    best_sigsq = sigsq_m.copy()
-    time_since_best = 0
-    t = 1
-    start_lr = learn_rate
-    # while error > eps:
-    for _ in range(reps):
-        permut = list(np.random.permutation(range(N)))
-        for n in permut:
-            time_since_best += 1
-            y_phi, y_theta, y_alpha, y_sigsq = y_t(phi, phi_m, theta,
-              theta_m, alpha, alpha_m, sigsq, sigsq_m, t)
-            data = np.array(traj_data[n]) # m x 2 x Ti
-            R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
-            normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
-            meanvec, denom, gvec, gnorm = grad_terms_re(normals,
-              y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
-            (logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq,
-              glogZ_phi) = logZ_re(normals, meanvec, denom, impa, y_theta,
-              data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
-          
-            logprobdiff = logprobs(state_space, Ti, y_sigsq, gnorm, data, TP, m,
-              normals, R_all, logZvec, meanvec, denom).mean(axis=1).sum()
-            elbo.append(logprobdiff)
-            #print(lp - lq)
-              
-            g_phi = phi_grad_re(y_phi, m, Ti, normals, denom, y_sigsq,
-              glogZ_phi)
-            g_theta = theta_grad_re(glogZ_theta, data, state_space,
-              R_all, E_all, y_sigsq, y_alpha, centers_x, centers_y)
-            g_alpha = alpha_grad_re(glogZ_alpha, E_all, R_all)
-            g_sigsq = sigsq_grad_re(glogZ_sigsq, normals, Ti, y_sigsq,
-              gnorm, denom, R_all, gvec)
-          
-            phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
-            phi, theta, alpha, sigsq = update(y_phi, y_theta, y_alpha,
-              y_sigsq, g_phi, g_theta, g_alpha, g_sigsq, learn_rate)
-
-            if logprobdiff > best:
-                best = logprobdiff
-                best_phi = phi.copy()
-                best_theta = theta.copy()
-                best_alpha = alpha.copy()
-                best_sigsq = sigsq.copy()
-                time_since_best = 0
-            
-            learn_rate *= 0.99
-            t += 1
-            if time_since_best > RESET:
-                phi_m = np.zeros_like(phi)
-                theta_m = np.zeros_like(theta)
-                alpha_m = np.zeros_like(alpha)
-                sigsq_m = np.zeros_like(sigsq)
-                learn_rate = start_lr
-                phi += np.random.normal(scale=2*np.max(np.abs(phi)),
-                  size=phi.shape)
-                phi[:,1] = np.maximum(phi[:,1], 0.01)
-                theta += np.random.normal(scale=2*np.max(np.abs(theta)),
-                  size=theta.shape)
-                alpha += np.random.normal(scale=2*np.max(np.abs(alpha)),
-                  size=alpha.shape)
-                sigsq += np.random.normal(scale=2*np.max(np.abs(sigsq)),
-                  size=sigsq.shape)
-                sigsq = np.maximum(sigsq, 0.01)
-                time_since_best = 0
-                #print('RESET')
-    if plot:
-        plt.plot(elbo)
-    return best_phi, best_theta, best_alpha, best_sigsq
-
 
 def grad_terms_re(normals, phi, alpha, sigsq, theta, data, R_all,
              E_all, Ti, m):
@@ -993,9 +766,9 @@ def loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec):
     logT = np.log(1/len(state_space)) + np.sum(np.log(traj_TP(data, TP, Ti, m)), axis=1)
     return -logZvec + logT + np.einsum('ij,ij->i', beta, R_all)
 
-def MEIRL_det(theta, alpha, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, y_t, update, centers_x,
-         centers_y, plot=True):
+def AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, reps, y_t, update,
+         plot=True):
     '''
     y_t is the function used to define modified iterate for Nesterov, if
     applicable
@@ -1004,16 +777,77 @@ def MEIRL_det(theta, alpha, traj_data, TP, state_space,
     '''
     impa = list(np.random.choice(action_space, M))
     N = len(traj_data)
-    lik = []
+    elbo = []
+    phi_m = np.zeros_like(phi)
     theta_m = np.zeros_like(theta)
     alpha_m = np.zeros_like(alpha)
+    sigsq_m = np.zeros_like(sigsq)
+    t = 1
+    # while error > eps:
+    for _ in range(reps):
+        permut = list(np.random.permutation(range(N)))
+        for n in permut:
+            y_phi, y_theta, y_alpha, y_sigsq = y_t(phi, phi_m, theta, theta_m,
+              alpha, alpha_m, sigsq, sigsq_m, t)
+            data = np.array(traj_data[n]) # m x 2 x Ti
+            R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
+            normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
+            meanvec, denom, gvec, gnorm = grad_terms_re(normals,
+              y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
+            logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals,
+              meanvec, denom, impa, y_theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
+          
+            logprobdiff = logprobs(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
+              logZvec, meanvec, denom).mean(axis=1).sum()
+            elbo.append(logprobdiff)
+            #print(lp - lq)
+              
+            g_phi = phi_grad_re(y_phi, m, Ti, normals, denom, y_sigsq, glogZ_phi)
+            g_theta = theta_grad_re(glogZ_theta, data, state_space, R_all, E_all,
+              y_sigsq, y_alpha, centers_x, centers_y)
+            g_alpha = alpha_grad_re(glogZ_alpha, E_all, R_all)
+            g_sigsq = sigsq_grad_re(glogZ_sigsq, normals, Ti, y_sigsq, gnorm, denom,
+              R_all, gvec)
+          
+            phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
+            phi, theta, alpha, sigsq = update(y_phi, y_theta, y_alpha, y_sigsq, g_phi,
+              g_theta, g_alpha, g_sigsq, learn_rate)
+            
+            learn_rate *= 0.99
+            t += 1
+    if plot:
+        plt.plot(elbo)
+    return phi, theta, alpha, sigsq
+
+def AR_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, reps, y_t, update,
+         plot=True):
+    '''
+    y_t is the function used to define modified iterate for Nesterov, if
+    applicable
+    
+    update is e.g. GD or Adam
+    '''
+    impa = list(np.random.choice(action_space, M))
+    N = len(traj_data)
+    elbo = []
+    phi_m = np.zeros_like(phi)
+    theta_m = np.zeros_like(theta)
+    alpha_m = np.zeros_like(alpha)
+    sigsq_m = np.zeros_like(sigsq)
+    y_phi = phi.copy()
     y_theta = theta.copy()
     y_alpha = alpha.copy()
+    y_sigsq = sigsq.copy()
     best = -np.inf
+    best_phi = phi_m.copy()
     best_theta = theta_m.copy()
     best_alpha = alpha_m.copy()
+    best_sigsq = sigsq_m.copy()
     tm = 1
-    last_lik = -np.inf
+    last_lpd = -np.inf
+    # maybe don't need to resample normals every time? testing this out
+    normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
     # while error > eps:
     for _ in range(reps):
         permut = list(np.random.permutation(range(N)))
@@ -1022,41 +856,142 @@ def MEIRL_det(theta, alpha, traj_data, TP, state_space,
             
             data = np.array(traj_data[n]) # m x 2 x Ti
             R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
-            beta = np.einsum('ij,ijk->ik', y_alpha, E_all)
-            
-            logZvec, glogZ_theta, glogZ_alpha = logZ_det(beta,
-              impa, y_theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
+            meanvec, denom, gvec, gnorm = grad_terms_re(normals,
+              y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
+            logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ_re(normals,
+              meanvec, denom, impa, y_theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
           
-            loglikelihood = loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec).sum()
-            lik.append(loglikelihood)
+            logprobdiff = logprobs(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
+              logZvec, meanvec, denom).mean(axis=1).sum()
+            elbo.append(logprobdiff)
+            #print(lp - lq)
               
-            g_theta = theta_grad_det(data, beta, state_space, glogZ_theta, centers_x, centers_y)
-            g_alpha = alpha_grad_det(glogZ_alpha, R_all, E_all)
+            g_phi = phi_grad_re(y_phi, m, Ti, normals, denom, y_sigsq, glogZ_phi)
+            g_theta = theta_grad_re(glogZ_theta, data, state_space, R_all, E_all,
+              y_sigsq, y_alpha, centers_x, centers_y)
+            g_alpha = alpha_grad_re(glogZ_alpha, E_all, R_all)
+            g_sigsq = sigsq_grad_re(glogZ_sigsq, normals, Ti, y_sigsq, gnorm, denom,
+              R_all, gvec)
           
-            theta_m, alpha_m, = theta, alpha
-            theta = y_theta + learn_rate*g_theta
-            alpha = y_alpha + learn_rate*g_alpha
+            phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
+            phi, theta, alpha, sigsq = update(y_phi, y_theta, y_alpha, y_sigsq, g_phi,
+              g_theta, g_alpha, g_sigsq, learn_rate)
             
             mult = (tm - 1)/t
+            y_phi = phi + mult*(phi - phi_m)
             y_theta = theta + mult*(theta - theta_m)
             y_alpha = alpha + mult*(alpha - alpha_m)
+            y_sigsq = sigsq + mult*(sigsq - sigsq_m)
             
             learn_rate *= 0.99
             tm = t
             
-            if loglikelihood > best:
-                best = loglikelihood
+            if logprobdiff > best:
+                best = logprobdiff
+                best_phi = y_phi.copy()
                 best_theta = y_theta.copy()
                 best_alpha = y_alpha.copy()
-            elif loglikelihood < last_lik:
+                best_sigsq = y_sigsq.copy()
+            elif logprobdiff < last_lpd:
+                y_phi = phi.copy()
                 y_theta = theta.copy()
                 y_alpha = alpha.copy()
+                y_sigsq = sigsq.copy()
                 tm = 1
                 
-            last_lik = loglikelihood
+            last_lpd = logprobdiff
     if plot:
-        plt.plot(lik)
-    return best_theta, best_alpha
+        plt.plot(elbo)
+    return best_phi, best_theta, best_alpha, best_sigsq
+
+def ann_AEVB(theta, alpha, sigsq, phi, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, reps, y_t, update,
+         plot=True):
+    '''
+    y_t is the function used to define modified iterate for Nesterov, if
+    applicable
+    
+    update is e.g. GD or Adam
+    '''
+    impa = list(np.random.choice(action_space, M))
+    N = len(traj_data)
+    elbo = []
+    phi_m = np.zeros_like(phi)
+    theta_m = np.zeros_like(theta)
+    alpha_m = np.zeros_like(alpha)
+    sigsq_m = np.zeros_like(sigsq)
+    best = -np.inf
+    best_phi = phi_m.copy()
+    best_theta = theta_m.copy()
+    best_alpha = alpha_m.copy()
+    best_sigsq = sigsq_m.copy()
+    time_since_best = 0
+    t = 1
+    start_lr = learn_rate
+    # while error > eps:
+    for _ in range(reps):
+        permut = list(np.random.permutation(range(N)))
+        for n in permut:
+            time_since_best += 1
+            y_phi, y_theta, y_alpha, y_sigsq = y_t(phi, phi_m, theta,
+              theta_m, alpha, alpha_m, sigsq, sigsq_m, t)
+            data = np.array(traj_data[n]) # m x 2 x Ti
+            R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
+            normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
+            meanvec, denom, gvec, gnorm = grad_terms_re(normals,
+              y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
+            (logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq,
+              glogZ_phi) = logZ_re(normals, meanvec, denom, impa, y_theta,
+              data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
+          
+            logprobdiff = logprobs(state_space, Ti, y_sigsq, gnorm, data, TP, m,
+              normals, R_all, logZvec, meanvec, denom).mean(axis=1).sum()
+            elbo.append(logprobdiff)
+            #print(lp - lq)
+              
+            g_phi = phi_grad_re(y_phi, m, Ti, normals, denom, y_sigsq,
+              glogZ_phi)
+            g_theta = theta_grad_re(glogZ_theta, data, state_space,
+              R_all, E_all, y_sigsq, y_alpha, centers_x, centers_y)
+            g_alpha = alpha_grad_re(glogZ_alpha, E_all, R_all)
+            g_sigsq = sigsq_grad_re(glogZ_sigsq, normals, Ti, y_sigsq,
+              gnorm, denom, R_all, gvec)
+          
+            phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
+            phi, theta, alpha, sigsq = update(y_phi, y_theta, y_alpha,
+              y_sigsq, g_phi, g_theta, g_alpha, g_sigsq, learn_rate)
+
+            if logprobdiff > best:
+                best = logprobdiff
+                best_phi = phi.copy()
+                best_theta = theta.copy()
+                best_alpha = alpha.copy()
+                best_sigsq = sigsq.copy()
+                time_since_best = 0
+            
+            learn_rate *= 0.99
+            t += 1
+            if time_since_best > RESET:
+                phi_m = np.zeros_like(phi)
+                theta_m = np.zeros_like(theta)
+                alpha_m = np.zeros_like(alpha)
+                sigsq_m = np.zeros_like(sigsq)
+                learn_rate = start_lr
+                phi += np.random.normal(scale=2*np.max(np.abs(phi)),
+                  size=phi.shape)
+                phi[:,1] = np.maximum(phi[:,1], 0.01)
+                theta += np.random.normal(scale=2*np.max(np.abs(theta)),
+                  size=theta.shape)
+                alpha += np.random.normal(scale=2*np.max(np.abs(alpha)),
+                  size=alpha.shape)
+                sigsq += np.random.normal(scale=2*np.max(np.abs(sigsq)),
+                  size=sigsq.shape)
+                sigsq = np.maximum(sigsq, 0.01)
+                time_since_best = 0
+                #print('RESET')
+    if plot:
+        plt.plot(elbo)
+    return best_phi, best_theta, best_alpha, best_sigsq
 
 def MEIRL_det_pos(theta, alpha, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, y_t, update, centers_x,
@@ -1284,9 +1219,49 @@ def MEIRL_unif(theta, beta, traj_data, TP, state_space,
             t += 1
     return theta, beta
 
+def save_results():
+    filename = '_'.join(str(datetime.datetime.now()).split())
+    fname = filename.replace(':', '--')
+    f = open(fname + '.txt', 'w')
+    f.write('D = ' + str(D) + '\n')
+    f.write('MOVE_NOISE = ' + str(MOVE_NOISE) + '\n')
+    f.write('INTERCEPT_ETA = ' + str(INTERCEPT_ETA) + '\n')
+    f.write('INTERCEPT_REW = ' + str(INTERCEPT_REW) + '\n')
+    f.write('WEIGHT = ' + str(WEIGHT) + '\n')
+    f.write('RESCALE = ' + str(RESCALE) + '\n')
+    f.write('RESET = ' + str(RESET) + '\n')
+    f.write('COEF = ' + str(COEF) + '\n')
+    f.write('ETA_COEF = ' + str(ETA_COEF) + '\n')
+    f.write('M = ' + str(M) + '\n')
+    f.write('N = ' + str(N) + '\n')
+    f.write('J = ' + str(J) + '\n')
+    f.write('T = ' + str(T) + '\n')
+    f.write('Ti = ' + str(Ti) + '\n')
+    f.write('B = ' + str(B) + '\n')
+    f.write('Q_ITERS = ' + str(Q_ITERS) + '\n')
+    f.write('learn_rate = ' + str(learn_rate) + '\n')
+    f.write('cr_reps = ' + str(cr_reps) + '\n')
+    f.write('reps = ' + str(reps) + '\n')
+    f.write('centers_x = ' + str(centers_x) + '\n')
+    f.write('centers_y = ' + str(centers_y) + '\n')
+    f.write('SEED_NUM = ' + str(SEED_NUM) + '\n')
+    f.write('true_theta = ' + str(true_theta) + '\n')
+    f.write('ex_alphas = ' + str(ex_alphas) + '\n')
+    f.write('ex_sigsqs = ' + str(ex_sigsqs) + '\n')
+    f.write('alpha = ' + str(alpha) + '\n')
+    f.write('sigsq = ' + str(sigsq) + '\n')
+    f.write('theta = ' + str(theta) + '\n')
+    f.write('beta = ' + str(beta) + '\n')
+    f.write('phi = ' + str(phi) + '\n')
+    
+
+    
+
+
 # Initializations
 #np.random.seed(1)
-np.random.seed(50) #40) #30) #20) #10)
+SEED_NUM = 50
+np.random.seed(SEED_NUM) #40) #30) #20) #10)
 
 # Global params
 D=16 #8 #6x
@@ -1299,7 +1274,6 @@ INTERCEPT_ETA = 0
 WEIGHT = 2
 RESCALE = 1
 RESET = 20
-NUMER = 0.05
 COEF = 0.1
 ETA_COEF = 0.05 #0.01 #0.05 #0.1 #1
 '''
