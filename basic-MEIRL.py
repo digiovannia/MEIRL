@@ -280,6 +280,17 @@ def synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
         actions.append(a)
     return list(multi_state_index(np.array(states))), actions
 
+'''
+It appears that sigsq (and hence beta) can make a difference in the 
+trajectories, but it takes a lot of variation to change things...?
+'''
+
+def test(pdist, N):
+    actions = np.array([0,0,0,0])
+    for i in range(N):
+        actions[np.random.choice(action_space, p=pdist)] += 1
+    return actions / N
+
 def see_trajectory(reward_map, state_seq):
     '''
     Input state seq is in index form; can transform to tuples
@@ -290,7 +301,7 @@ def see_trajectory(reward_map, state_seq):
         plt.annotate('*', (s[1]+0.2,s[0]+0.7), color='b', size=24)
         plt.show()
 
-def make_data(alpha, sigsqs, rewards, N, Ti, state_space, action_space,
+def make_data(alpha, sigsq, rewards, N, Ti, state_space, action_space,
               init_state_sample, TP, m, Q=False):
     '''
     Makes a list of N trajectories based on the given parameters and the
@@ -1032,9 +1043,9 @@ for seed in [20,40,60,80,100]:
     Ti = 20 # length of trajectory
     B = 50#100 # number of betas/normals sampled for expectation
     Q_ITERS = 30000#50000
-    learn_rate = 0.0001
+    learn_rate = 0.5 #0.0001
     cr_reps = 10
-    reps = 1
+    reps = 5
     
     '''
     # Used in second wave of experiments, when D = 8
@@ -1129,10 +1140,10 @@ for seed in [20,40,60,80,100]:
     sigsq3 = 2
     sigsq4 = 2
     '''
-    sigsq1 = 0.1#0.01
-    sigsq2 = 0.1#0.01
-    sigsq3 = 0.1#0.01
-    sigsq4 = 0.1#0.01
+    sigsq1 = 10#0.1#0.01
+    sigsq2 = 10#0.1#0.01
+    sigsq3 = 10#0.1#0.01
+    sigsq4 = 10#0.1#0.01
     
     ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4])
     ex_sigsqs = np.array([sigsq1, sigsq2, sigsq3, sigsq4])
@@ -1176,6 +1187,8 @@ for seed in [20,40,60,80,100]:
 '''
 How is the unif model so robust???
 
+Performance of AR and unif seem totally unaffected by sigsq
+
 
 (Bearing in mind that J=10 for these, so not too rigorous)
 
@@ -1202,8 +1215,17 @@ ETA_COEF = 0.05, J=20 (less coverage of expertise):
     and here det noticeably outperforms unif (~1080 to 790)
     * seed 40, 60, 100 has opposite pattern, both quite suboptimal but unif does slightly better
 
-ETA_COEF = 0.01, J=20, AR vs unif:
-    * seed 20: AR SUCKS
+ETA_COEF = 0.01, J=20, sigsq=0.1, AR vs unif:
+    * seed 20: AR does well on some trials but sucks on others, seems to find
+    anti-optimizing solutions. But at least now it isn't *always* bad.
+    * seed 40: again better than avg but AR still p bad relative to unif
+    * seed 60: same story
+    
+ETA_COEF = 0.01, J=20, sigsq=0.4, reps=5, AR vs unif:
+    * seed 20: AR does well on some trials but sucks on others, seems to find
+    anti-optimizing solutions. But at least now it isn't *always* bad.
+    * seed 40: again better than avg but AR still p bad relative to unif
+    * seed 60: same story
 '''
 
 #regular
@@ -1373,6 +1395,9 @@ To do:
      evaluation
      * Compare performance for different split of steps in Ti vs N (length vs
      number of trajectories)
+     * Check action-value distribution vs next-step reward distribution, check
+     that the reason robust to Boltz isn't just that those distributions are
+     v similar
      
 QUALITATIVE NOTES:
     * Good performance is basically elusive in large D MDPs when beta is allowed
