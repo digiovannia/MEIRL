@@ -698,7 +698,7 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     # while error > eps:
     for _ in range(reps):
         permut = list(np.random.permutation(range(N)))
-        for n in permut[20:30]: #permut:
+        for n in permut:#permut[20:30]:
             t = 1/2*(1 + np.sqrt(1 + 4*tm**2))
             
             data = np.array(traj_data[n]) # m x 2 x Ti
@@ -737,6 +737,8 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             but if learn_rate is lowered, doesn't change much at all.
             
             Extremely unstable
+            
+            Actually stabilizes when clip gradient by norm
             '''
             
             mult = (tm - 1)/t
@@ -763,8 +765,8 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                 tm = 1
                 
             last_lpd = logprobdiff
-            sns.heatmap(lin_rew_func(theta, state_space, centers_x, centers_y))
-            plt.show()
+            #sns.heatmap(lin_rew_func(theta, state_space, centers_x, centers_y))
+            #plt.show()
     if plot:
         plt.plot(elbos)
     return best_theta, best_phi, best_alpha, best_sigsq
@@ -1204,13 +1206,6 @@ ETA_COEF = 0.01, J=20, AR vs unif:
     * seed 20: AR SUCKS
 '''
 
-
-
-
-
-theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
-         plot=True):
 #regular
 theta_star, phi_star, alpha_star, sigsq_star = ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y)
