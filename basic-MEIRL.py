@@ -425,10 +425,10 @@ def logZ(normals, meanvec, denom, impa, theta, data, M, TP,
         lst.append(feat_expect)
     gradR_Z = np.swapaxes(np.array(lst), 0, 1)
 
-    volA = len(action_space) # m x N x Ti 
+    volA = len(action_space)
     bterm = np.einsum('ijk,ilk->ijlk', meanvec, R_Z)
-    expo = np.exp(bterm) #getting ZEROS and INFs
-    lvec = np.log(volA) + log_mean_exp(bterm)#+ np.log(np.mean(expo,axis=2)) + K
+    expo = np.exp(bterm)
+    lvec = np.log(volA) + log_mean_exp(bterm)
     logZvec = lvec.sum(axis=2)
 
     gradR = grad_lin_rew(data, state_space, centers_x, centers_y)
@@ -698,7 +698,7 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     # while error > eps:
     for _ in range(reps):
         permut = list(np.random.permutation(range(N)))
-        for n in permut:
+        for n in permut[20:30]: #permut:
             t = 1/2*(1 + np.sqrt(1 + 4*tm**2))
             
             data = np.array(traj_data[n]) # m x 2 x Ti
@@ -719,15 +719,31 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             g_alpha = alpha_grad(glogZ_alpha, E_all, R_all)
             g_sigsq = sigsq_grad(glogZ_sigsq, normals, Ti, y_sigsq, gnorm, denom,
               R_all, gvec)
+            
+            '''
+            testing out gradient clipping
+            '''
+            g_phi = g_phi / np.linalg.norm(g_phi)
+            g_theta = g_theta / np.linalg.norm(g_theta)
+            g_alpha = g_alpha / np.linalg.norm(g_alpha, 'f')
+            g_sigsq = g_sigsq / np.linalg.norm(g_sigsq)
           
             phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
             phi, theta, alpha, sigsq = GD(y_phi, y_theta, y_alpha, y_sigsq, g_phi,
               g_theta, g_alpha, g_sigsq, learn_rate)
             
+            '''
+            gradients seem to blow up... estimates swing wildly about.
+            but if learn_rate is lowered, doesn't change much at all.
+            
+            Extremely unstable
+            '''
+            
             mult = (tm - 1)/t
             y_phi = phi + mult*(phi - phi_m)
             y_theta = theta + mult*(theta - theta_m)
-            y_alpha = alpha + mult*(alpha - alpha_m)
+            #y_alpha = alpha + mult*(alpha - alpha_m)
+            y_alpha = np.maximum(alpha + mult*(alpha - alpha_m), 0)
             y_sigsq = sigsq + mult*(sigsq - sigsq_m)
             
             learn_rate *= 0.99
@@ -747,6 +763,8 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                 tm = 1
                 
             last_lpd = logprobdiff
+            sns.heatmap(lin_rew_func(theta, state_space, centers_x, centers_y))
+            plt.show()
     if plot:
         plt.plot(elbos)
     return best_theta, best_phi, best_alpha, best_sigsq
@@ -968,7 +986,7 @@ def save_results():
     f.write('centers_x = ' + str(centers_x) + '\n')
     f.write('centers_y = ' + str(centers_y) + '\n')
     f.write('SEED_NUM = ' + str(SEED_NUM) + '\n')
-    f.write('true_theta = ' + str(true_theta) + '\n')
+    f.write('theta_true = ' + str(theta_true) + '\n')
     f.write('ex_alphas = ' + str(ex_alphas) + '\n')
     f.write('ex_sigsqs = ' + str(ex_sigsqs) + '\n')
     f.write('alpha = ' + str(alpha) + '\n')
@@ -1030,7 +1048,7 @@ for seed in [20,40,60,80,100]:
     state_space = np.array([(i,j) for i in range(D) for j in range(D)])
     action_space = list(range(4))
     TP = transition(state_space, action_space)
-    true_theta = np.random.normal(size = D // 2 + 1, scale=3)
+    theta_true = np.random.normal(size = D // 2 + 1, scale=3)
     '''
     Trying out a more sparse-reward MDP (N = 20):
         Results (SEED 50):
@@ -1065,10 +1083,10 @@ for seed in [20,40,60,80,100]:
     
     seed 100 same problem
     '''
-    #true_theta = np.zeros(d)
-    #true_theta[0] += 5*np.random.rand() #3.5
+    #theta_true = np.zeros(d)
+    #theta_true[0] += 5*np.random.rand() #3.5
     INTERCEPT_REW = 0
-    rewards = lin_rew_func(true_theta, state_space, centers_x, centers_y)
+    rewards = lin_rew_func(theta_true, state_space, centers_x, centers_y)
     sns.heatmap(rewards)
     plt.show()
     # Misspecified reward bases?
@@ -1109,10 +1127,10 @@ for seed in [20,40,60,80,100]:
     sigsq3 = 2
     sigsq4 = 2
     '''
-    sigsq1 = 0.01
-    sigsq2 = 0.01
-    sigsq3 = 0.01
-    sigsq4 = 0.01
+    sigsq1 = 0.1#0.01
+    sigsq2 = 0.1#0.01
+    sigsq3 = 0.1#0.01
+    sigsq4 = 0.1#0.01
     
     ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4])
     ex_sigsqs = np.array([sigsq1, sigsq2, sigsq3, sigsq4])
@@ -1133,7 +1151,7 @@ for seed in [20,40,60,80,100]:
     alpha = np.random.normal(size=(m,p), scale=0.05)
     sigsq = np.random.rand(m)
     beta = np.random.rand(m)
-    theta = np.zeros_like(true_theta)
+    theta = np.random.normal(size=d) #np.zeros_like(theta_true)
     
     traj_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
                          init_state_sample, TP, m)
@@ -1183,6 +1201,7 @@ ETA_COEF = 0.05, J=20 (less coverage of expertise):
     * seed 40, 60, 100 has opposite pattern, both quite suboptimal but unif does slightly better
 
 ETA_COEF = 0.01, J=20, AR vs unif:
+    * seed 20: AR SUCKS
 '''
 
 
@@ -1193,14 +1212,35 @@ theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
          plot=True):
 #regular
-phi_star, theta_star, alpha_star, sigsq_star = ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
+theta_star, phi_star, alpha_star, sigsq_star = ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y)
-phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
+theta_star_2, phi_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y)
 theta_star_p, alpha_star_p = MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y)
-phi_star_AR, theta_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y)
+theta_star_AR, phi_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha,
+  sigsq, phi, beta, traj_data, TP, state_space, action_space, B, m, M, Ti,
+  learn_rate, reps, centers_x, centers_y)
+'''
+Testing AR. Seems to consistently find a certain solution, but that solution is
+very wrong...
+* Trying different samples of trajectories, this doesn't some to be a problem
+of sensitivity to the sample. It still consistently settles on this wrong
+answer.
+* Also not because of negative alphas - I used the projection and it still doesn't
+work!
+* Evidently sensitive to INITIAL THETA. varying initial other params didn't change
+much, but varying theta does a lot
+
+
+
+
+
+
+
+sigsq of 0.5 --> unif does terrible on non-sparse, hallucinates high reward
+in a corner consistently...
+'''
 theta_star_u, beta_star_u = MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y)
 # these all seem to do terribly on seed 10, except when sigsq is 0.01 rather than 2 -
@@ -1226,7 +1266,7 @@ dumb_data = make_data_myopic(alpha_star_2, sigsq_star_2, lin_rew_func(theta_star
                             state_space, centers_x, centers_y), N, Ti, state_space, action_space,
                             init_state_sample, TP, m)
 
-#sns.heatmap(lin_rew_func(true_theta, state_space, centers_x, centers_y))
+#sns.heatmap(lin_rew_func(theta_true, state_space, centers_x, centers_y))
 
 '''
 Testing against constant-beta model
@@ -1301,8 +1341,6 @@ true_tot_b, AEVB_tot_b, unif_tot_b = evaluate_vs_uniform(theta, alpha, sigsq, ph
 tr_tot, det_tot, ra_tot = evaluate_det_vs_random(theta, alpha, sigsq, phi, TP, 1, opt_policy, T,
                         state_space, action_space, rewards, init_policy,
                         init_Q, J, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y, cr_reps)
-
-
 
 '''
 To do:
