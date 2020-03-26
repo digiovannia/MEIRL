@@ -437,3 +437,32 @@ def evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
         
         print('.')
     return true_total, AEVB_total, det_total
+
+
+def eps_greedy(Q, eps, action_space):
+    best = np.argmax(Q, axis=2)
+    po = stoch_policy(best, action_space)
+    po += eps/(len(action_space)-1)*(1 - po) - eps*po
+    return po
+
+def Qlearn(rate, gam, eps, K, T, state_space, action_space,
+           rewards, policy, Q):
+    '''
+    Q-learning. Returns the corresponding optimal policy and Q*.
+    '''
+    for _ in range(K):
+        st = state_space[np.random.choice(len(state_space))]
+        for _ in range(T):
+            policy = eps_greedy(Q, eps, action_space)
+            at = np.random.choice(action_space, p=policy[tuple(st)])    
+            sp = grid_step(st,at)
+            rt = rewards[tuple(sp)]
+            qnext = np.max(Q[sp[0],sp[1]])
+            qnow = Q[st[0],st[1],at]
+            Q[st[0],st[1],at] += rate*(rt + gam*qnext - qnow)
+            st = sp
+    policy *= 0
+    for i in range(D):
+        for j in range(D):
+            policy[i,j,np.argmax(Q[i,j])] = 1
+    return policy, Q

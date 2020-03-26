@@ -15,6 +15,30 @@ Actions: 0 = up, 1 = right, 2 = down, 3 = left
 
 ### Helper functions
 
+def log_mean_exp(tensor):
+    '''
+    Avoids overflow in computation of log of a mean of exponentials
+    '''
+    K = np.max(tensor, axis=2)
+    expo = np.exp(tensor - K[:,:,None,:])
+    return np.log(np.mean(expo,axis=2)) + K
+
+def softmax(v, beta, axis=False):
+    '''
+    May delete if clause? no need for axis...
+    '''
+    if axis:
+        x = beta[:,:,None]*v
+        w = np.exp(x - np.max(x, axis=axis)[:,:,None])
+        z = np.sum(w, axis=axis)
+        return np.divide(w, z[:,:,None])
+    else:
+        w = np.exp(beta*v)
+        z = np.sum(w)
+        return w / z
+    
+### Grid world functions
+
 def manh_dist(p1, p2):
     return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
 
@@ -83,6 +107,8 @@ def grid_step(s, a):
     new_state = s + act_to_coord(a)
     return np.minimum(np.maximum(new_state, 0), D-1)
 
+### Functions for generating trajectories
+
 def episode(s,T,policy,rewards,a=-1):
     '''
     Given any generic state, time horizon, policy, and reward structure indexed
@@ -102,6 +128,8 @@ def episode(s,T,policy,rewards,a=-1):
     reward_list.append(rewards[tuple(s)])
     return np.array(states), actions, reward_list
 
+###
+
 def visualize_policy(rewards, policy):
     '''
     Heatmap representing the input policy in the state space.
@@ -114,34 +142,6 @@ def visualize_policy(rewards, policy):
             dy = ((pol[x,y]-1) % 2)*0.2*(pol[x,y] - 1)
             plt.arrow(y+0.5,x+0.5,dx,dy,head_width=0.1,
                       color="black",alpha=0.9)
-
-def eps_greedy(Q, eps, action_space):
-    best = np.argmax(Q, axis=2)
-    po = stoch_policy(best, action_space)
-    po += eps/(len(action_space)-1)*(1 - po) - eps*po
-    return po
-
-def Qlearn(rate, gam, eps, K, T, state_space, action_space,
-           rewards, policy, Q):
-    '''
-    Q-learning. Returns the corresponding optimal policy and Q*.
-    '''
-    for _ in range(K):
-        st = state_space[np.random.choice(len(state_space))]
-        for _ in range(T):
-            policy = eps_greedy(Q, eps, action_space)
-            at = np.random.choice(action_space, p=policy[tuple(st)])    
-            sp = grid_step(st,at)
-            rt = rewards[tuple(sp)]
-            qnext = np.max(Q[sp[0],sp[1]])
-            qnow = Q[st[0],st[1],at]
-            Q[st[0],st[1],at] += rate*(rt + gam*qnext - qnow)
-            st = sp
-    policy *= 0
-    for i in range(D):
-        for j in range(D):
-            policy[i,j,np.argmax(Q[i,j])] = 1
-    return policy, Q
 
 def value_iter(state_space, action_space, rewards, TP, gam, tol):
     '''
@@ -186,17 +186,6 @@ def mu_all(alpha):
         for j in range(D):
             muvals[i,j] = mu((i,j), alpha)
     return muvals
-
-def softmax(v, beta, axis=False):
-    if axis:
-        x = beta[:,:,None]*v
-        w = np.exp(x - np.max(x, axis=axis)[:,:,None])
-        z = np.sum(w, axis=axis)
-        return np.divide(w, z[:,:,None])
-    else:
-        w = np.exp(beta*v)
-        z = np.sum(w)
-        return w / z
 
 def beta_func(alpha, sigsq):
     '''
@@ -397,19 +386,25 @@ def elbo(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all,
     lq = -Ti/2*np.log(2*np.pi*denom)[:,None] - epsnorm/2
     return (lp - lq).mean(axis=1).sum()
 
+'''
+In the gradient functions that follow, mean over an axis is for the Monte
+Carlo estimate of the expectation with respect to multivariate standard normal.
+'''
+
 def phi_grad(phi, m, Ti, normals, denom, sigsq, glogZ_phi):
-    x = (phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:] + (denom**(1/2))[:,None,None]*normals
+    x1 = (phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:]
+    x2 = (denom**(1/2))[:,None,None]*normals
+    x = x1 + x2
     y1 = 1/sigsq[:,None]*x.sum(axis=2)
-    y2 = np.einsum('ijk,ijk->ij', normals, x)/((2*sigsq*denom**(1/2))[:,None]) - Ti/(2*denom)[:,None]
-    result = -glogZ_phi - np.stack((y1, y2))
+    y2 = np.einsum('ijk,ijk->ij', normals, x)/((2*sigsq*denom**(1/2))[:,None])
+    result = -glogZ_phi - np.stack((y1, y2 - Ti/(2*denom)[:,None]))
     return np.swapaxes(np.mean(result, axis=2), 0, 1)
 
 def alpha_grad(glogZ_alpha, E_all, R_all):
     result = -glogZ_alpha + np.einsum('ijk,ik->ij', E_all, R_all)[:,None,:]
     return np.mean(result, axis=1)
 
-def sigsq_grad(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all,
-                  gvec):
+def sigsq_grad(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all, gvec):
     q_grad = -Ti/(2*denom)
     x = -Ti/(2*sigsq) + np.einsum('ij,ij->i', R_all, R_all)
     y = np.einsum('ijk,ik->ij', normals, R_all)/(2*denom**(1/2))[:,None]
@@ -418,11 +413,6 @@ def sigsq_grad(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all,
     w = 1/(2*sigsq**2)[:,None]*gnorm
     result = -glogZ_sigsq + x[:,None] + y - z + w - q_grad[:,None]
     return np.mean(result, axis=1)
-
-def log_mean_exp(tensor):
-    K = np.max(tensor, axis=2)
-    expo = np.exp(tensor - K[:,:,None,:])
-    return np.log(np.mean(expo,axis=2)) + K
 
 def logZ(normals, meanvec, denom, impa, theta, data, M, TP,
             R_all, E_all, action_space, centers_x, centers_y):
