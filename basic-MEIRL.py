@@ -511,8 +511,6 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
               centers_y)
             est_policy = value_iter(state_space, action_space, reward_est, TP,
               GAM, 1e-5)[0]
-            #Qlearn(0.5, 0.8, 0.1, Q_ITERS, 20, state_space,
-            #action_space, reward_est, init_policy, init_Q)[0]
             est_rew = cumulative_reward(s_list, cr_reps, est_policy, T,
               state_space, rewards)
             plt.plot(np.cumsum(est_rew), color=cols[i])
@@ -538,7 +536,6 @@ def logZ_unif(beta, impa, theta, data, M, TP, action_space, centers_x, centers_y
     for j in range(M):
         newdata = imp_samp_data(data, impa, j, m, Ti).astype(int)
         feat_expect = grad_lin_rew(newdata, state_space, centers_x, centers_y)
-        #probs = TP[newdata[:,0], newdata[:,1]] 
         lst.append(feat_expect)
     gradR_Z = np.swapaxes(np.array(lst), 0, 1)
     
@@ -554,8 +551,6 @@ def logZ_unif(beta, impa, theta, data, M, TP, action_space, centers_x, centers_y
     den = expo.sum(axis=1)
     glogZ_theta = ((numsum_t/den[:,None,:]).sum(axis=2)).sum(axis=0)
     glogZ_beta = (numsum_b/den).sum(axis=1)
-    # This appears to approximate the true logZ for the
-    # grid world with 4 actions very well!
     return logZvec, glogZ_theta, glogZ_beta # m x N; Not averaged over beta!
 
 def beta_grad_unif(glogZ_beta, R_all):
@@ -597,8 +592,6 @@ def logZ_det(beta, impa, theta, data, M, TP, R_all, E_all, action_space,
     den = expo.sum(axis=1)
     glogZ_theta = ((numsum_t/den[:,None,:]).sum(axis=2)).sum(axis=0)
     glogZ_alpha = (num_a/den[:,None,:]).sum(axis=2)
-    # This appears to approximate the true logZ for the
-    # grid world with 4 actions very well!
     return logZvec, glogZ_theta, glogZ_alpha
 
 def alpha_grad_det(glogZ_alpha, R_all, E_all):
@@ -658,7 +651,6 @@ def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
               logZvec, meanvec, denom)
             elbos.append(logprobdiff)
-            #print(lp - lq)
               
             g_phi = phi_grad(y_phi, m, Ti, normals, denom, y_sigsq, glogZ_phi)
             g_theta = theta_grad(glogZ_theta, data, state_space, R_all, E_all,
@@ -704,7 +696,6 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     best_sigsq = sigsq_m.copy()
     tm = 1
     last_lpd = -np.inf
-    # maybe don't need to resample normals every time? testing this out
     normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
     for _ in range(reps):
         permut = list(np.random.permutation(range(N)))
@@ -721,7 +712,6 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
               logZvec, meanvec, denom)
             elbos.append(logprobdiff)
-            #print(lp - lq)
               
             g_phi = phi_grad(y_phi, m, Ti, normals, denom, y_sigsq, glogZ_phi)
             g_theta = theta_grad(glogZ_theta, data, state_space, R_all, E_all,
@@ -730,9 +720,6 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             g_sigsq = sigsq_grad(glogZ_sigsq, normals, Ti, y_sigsq, gnorm, denom,
               R_all, gvec)
             
-            '''
-            testing out gradient clipping
-            '''
             g_phi = g_phi / np.linalg.norm(g_phi)
             g_theta = g_theta / np.linalg.norm(g_theta)
             g_alpha = g_alpha / np.linalg.norm(g_alpha, 'f')
@@ -741,15 +728,6 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
             phi, theta, alpha, sigsq = GD(y_phi, y_theta, y_alpha, y_sigsq, g_phi,
               g_theta, g_alpha, g_sigsq, learn_rate)
-            
-            '''
-            gradients seem to blow up... estimates swing wildly about.
-            but if learn_rate is lowered, doesn't change much at all.
-            
-            Extremely unstable
-            
-            Actually stabilizes when clip gradient by norm
-            '''
             
             mult = (tm - 1)/t
             y_phi = phi + mult*(phi - phi_m)
@@ -1253,9 +1231,6 @@ for seed in [20,40,60,80,100]:
     init_policy = stoch_policy(init_det_policy, action_space)
     init_Q = np.random.rand(D,D,4)
     opt_policy, Q = value_iter(state_space, action_space, rewards, TP, 0.9, 1e-5)
-    #Qlearn(0.5, 0.9, 0.1, Q_ITERS, 20, state_space,
-     #         action_space, rewards, init_policy, init_Q)
-    # takes about 1 min
     '''
     NOTE: SWITCHED GAM to 0.9!
     '''
