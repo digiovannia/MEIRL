@@ -219,25 +219,19 @@ def beta_func(alpha, sigsq):
     muvals = mu_all(alpha)
     return muvals + noise
 
-def arr_radial(s, c, coef):
-    '''
-    Radial basis functions for the reward function, applied to an array of
-    states. "c" is a fixed center point.
-    '''
-    return RESCALE*np.exp(-coef*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
-
 def psi_all_states(state_space, centers_x, centers_y):
     '''
     Basis functions for the entire state space
     '''
-    lst = list([arr_radial(state_space, (centers_x[i],centers_y[i]),
-      COEF) for i in range(len(centers_x))])
-    lst.append(INTERCEPT_REW*np.ones(len(state_space)))
-    return np.array(lst)
+    dist_x = state_space[:,0][:,None] - centers_x
+    dist_y = state_space[:,1][:,None] - centers_y
+    bases = RESCALE*np.exp(-COEF*(dist_x**2 + dist_y**2))
+    inter = INTERCEPT_REW*np.ones(len(state_space))[:,None]
+    return np.concatenate((bases, inter), axis=1)
 
 def lin_rew_func(theta, state_space, centers_x, centers_y):
-    return np.reshape(theta.dot(psi_all_states(state_space, centers_x,
-      centers_y)), (D, D))
+    return np.reshape(psi_all_states(state_space, centers_x,
+      centers_y).dot(theta), (D, D))
     
 def arr_expect_reward(rewards, data, TP, state_space):
     '''
@@ -251,7 +245,7 @@ def grad_lin_rew(data, state_space, centers_x, centers_y):
     '''
     probs = TP[data[:,0], data[:,1]] # m x Ti x D**2
     return np.swapaxes(probs.dot(psi_all_states(state_space, centers_x,
-      centers_y).transpose()), 1, 2)
+      centers_y)), 1, 2)
 
 def init_state_sample(state_space):
     '''
@@ -993,7 +987,7 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False):
     ETA_COEF = 0.01 #0.05 #0.1 #1
     GAM = 0.9
     M = 20 # number of actions used for importance sampling
-    N = 500#100#20 #100 #2000 # number of trajectories per expert
+    N = 2000#500#100#20 #100 #2000 # number of trajectories per expert
     J = 20#10 # should be 30....
     T = 50
     Ti = 20 # length of trajectory
@@ -1564,7 +1558,7 @@ Results I've recorded:
     init_theta so both are consistently bad
     
     * det_pos vs AR_AEVB; sigsq = 0.01; learn_rate = 0.1; init sigsq = 0;
-    N = 500 - now AEVB seems to do much better at least on seed 20, 40, but det
+    N = 500 - now AEVB seems to do much better on all seeds; but det
     does a bit worse;
     
 Turns out the reason det pos was working before was that sigsq was initialized

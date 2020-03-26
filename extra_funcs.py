@@ -438,6 +438,12 @@ def evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, reps, policy, T,
         print('.')
     return true_total, AEVB_total, det_total
 
+def arr_radial(s, c, coef):
+    '''
+    Radial basis functions for the reward function, applied to an array of
+    states. "c" is a fixed center point.
+    '''
+    return RESCALE*np.exp(-coef*((s[:,0]-c[0])**2+(s[:,1]-c[1])**2))
 
 def eps_greedy(Q, eps, action_space):
     best = np.argmax(Q, axis=2)
