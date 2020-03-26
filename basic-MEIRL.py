@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import datetime
+import os
 
 '''
 A simple DxD gridworld to test out multiple-experts IRL.
@@ -489,7 +490,7 @@ def cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards):
 def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                      action_space, B, m, M, Ti, learn_rate, reps, policy, T,
                      rewards, init_policy, init_Q, J, centers_x, centers_y,
-                     cr_reps, algo_a, algo_b, random=False):
+                     cr_reps, algo_a, algo_b, random=False, save=False):
     start = datetime.datetime.now()
     s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
     true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards)
@@ -521,6 +522,9 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             totals[i].append(np.sum(est_rew))
         sec = (datetime.datetime.now() - start).total_seconds()
         print(str(round((j+1)/J*100, 3)) + '% done: ' + str(round(sec / 60, 3)))
+    if save:
+        plt.savefig(save[0] + '___' + save[1] + '.png')
+        plt.show()
     return true_total, totals[0], totals[1]
 
 def logZ_unif(beta, impa, theta, data, M, TP, action_space, centers_x, centers_y):
@@ -834,6 +838,11 @@ def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             g_alpha = alpha_grad(glogZ_alpha, E_all, R_all)
             g_sigsq = sigsq_grad(glogZ_sigsq, normals, Ti, y_sigsq,
               gnorm, denom, R_all, gvec)
+            
+            g_phi = g_phi / np.linalg.norm(g_phi)
+            g_theta = g_theta / np.linalg.norm(g_theta)
+            g_alpha = g_alpha / np.linalg.norm(g_alpha, 'f')
+            g_sigsq = g_sigsq / np.linalg.norm(g_sigsq)
           
             phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
             phi, theta, alpha, sigsq = GD(y_phi, y_theta, y_alpha,
@@ -972,46 +981,148 @@ def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             t += 1
     return theta, beta
 
-def save_results():
-    filename = '_'.join(str(datetime.datetime.now()).split())
-    fname = filename.replace(':', '--')
-    f = open(fname + '.txt', 'w')
-    f.write('D = ' + str(D) + '\n')
-    f.write('MOVE_NOISE = ' + str(MOVE_NOISE) + '\n')
-    f.write('INTERCEPT_ETA = ' + str(INTERCEPT_ETA) + '\n')
-    f.write('INTERCEPT_REW = ' + str(INTERCEPT_REW) + '\n')
-    f.write('WEIGHT = ' + str(WEIGHT) + '\n')
-    f.write('RESCALE = ' + str(RESCALE) + '\n')
-    f.write('RESET = ' + str(RESET) + '\n')
-    f.write('COEF = ' + str(COEF) + '\n')
-    f.write('GAM = ' + str(GAM) + '\n')
-    f.write('ETA_COEF = ' + str(ETA_COEF) + '\n')
-    f.write('M = ' + str(M) + '\n')
-    f.write('N = ' + str(N) + '\n')
-    f.write('J = ' + str(J) + '\n')
-    f.write('T = ' + str(T) + '\n')
-    f.write('Ti = ' + str(Ti) + '\n')
-    f.write('B = ' + str(B) + '\n')
-    f.write('Q_ITERS = ' + str(Q_ITERS) + '\n')
-    f.write('learn_rate = ' + str(learn_rate) + '\n')
-    f.write('cr_reps = ' + str(cr_reps) + '\n')
-    f.write('reps = ' + str(reps) + '\n')
-    f.write('centers_x = ' + str(centers_x) + '\n')
-    f.write('centers_y = ' + str(centers_y) + '\n')
-    f.write('SEED_NUM = ' + str(SEED_NUM) + '\n')
-    f.write('theta_true = ' + str(theta_true) + '\n')
-    f.write('ex_alphas = ' + str(ex_alphas) + '\n')
-    f.write('ex_sigsqs = ' + str(ex_sigsqs) + '\n')
-    f.write('alpha = ' + str(alpha) + '\n')
-    f.write('sigsq = ' + str(sigsq) + '\n')
-    f.write('theta = ' + str(theta) + '\n')
-    f.write('beta = ' + str(beta) + '\n')
-    f.write('phi = ' + str(phi) + '\n')
+'''
+Setting ETA_COEF to 5 (so that experts behave basically randomly everywhere)
+it's evident that the unif model isn't magic. Its robustness in some challenging
+settings still suggests to me that it's using some helpful information -
+could the feature expectations really help that much? The other algos have
+the feature expect too but they don't show this robustness.
+
+
+GRADIENT CLIP FOR ALL?
+'''
+
+def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False):
     
+    # Global params
+    D=16 #8 #6x
+    d = D // 2 + 1
+    MOVE_NOISE = 0.05
+    INTERCEPT_ETA = 0
+    WEIGHT = 2
+    RESCALE = 1
+    RESET = 20
+    COEF = 0.1
+    ETA_COEF = 0.01 #0.05 #0.1 #1
+    GAM = 0.9
+    M = 20 # number of actions used for importance sampling
+    N = 500#100#20 #100 #2000 # number of trajectories per expert
+    J = 20#10 # should be 30....
+    T = 50
+    Ti = 20 # length of trajectory
+    B = 50#100 # number of betas/normals sampled for expectation
+    Q_ITERS = 30000#50000
+    INTERCEPT_REW = 0
+    learn_rate = 0.1#0.5 #0.0001
+    cr_reps = 10
+    reps = 5
+    state_space = np.array([(i,j) for i in range(D) for j in range(D)])
+    action_space = list(range(4))
+    TP = transition(state_space, action_space)
+    
+    alpha1 = np.array([WEIGHT, 0, 0, 0, 1]) # (1,1)
+    alpha2 = np.array([0, 0, WEIGHT, 0, 1]) # (1,4)
+    alpha3 = np.array([0, 0, 0, WEIGHT, 1]) # (4,4)
+    alpha4 = np.array([0, WEIGHT, 0, 0, 1])
+    
+    p = alpha1.shape[0]
+    m = 4
+
+    sigsq1 = 0.01
+    sigsq2 = 0.01
+    sigsq3 = 0.01
+    sigsq4 = 0.01
+    
+    ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4])
+    ex_sigsqs = np.array([sigsq1, sigsq2, sigsq3, sigsq4])
+    
+    init_det_policy = np.random.choice([0,1,2,3], size=(D,D))
+    init_policy = stoch_policy(init_det_policy, action_space)
+    init_Q = np.random.rand(D,D,4)
+    
+    for seed in [20,40,60,80,100]:
+        filename = '_'.join(str(datetime.datetime.now()).split())
+        fname = str(id_num) + '$' + filename.replace(':', '--')
+        os.mkdir('results/' + fname)
+        
+        SEED_NUM = seed#100#50#80#70#60
+        np.random.seed(SEED_NUM) #50) #40) #30) #20) #10)
+        
+        centers_x = np.random.choice(D, D//2)
+        centers_y = np.random.choice(D, D//2)
+        
+        theta_true = np.random.normal(size = D // 2 + 1, scale=3)
+        rewards = lin_rew_func(theta_true, state_space, centers_x, centers_y)
+        sns.heatmap(rewards)
+        plt.savefig('results/' + fname + '/' + 'true_reward.png')
+        plt.show()
+        
+        opt_policy, Q = value_iter(state_space, action_space, rewards, TP, 0.9, 1e-5)
+        
+        phi = np.random.rand(m,2)
+        alpha = np.random.normal(size=(m,p), scale=0.05)
+        sigsq = 1e-16 + np.zeros(m) #np.random.rand(m)
+        beta = np.random.rand(m)
+        theta = np.random.normal(size=d) #np.zeros_like(theta_true)
+        
+        traj_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
+                             init_state_sample, TP, m)
+        boltz_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
+                             init_state_sample, TP, m, Q)
+        
+        alg_a_str = str(algo_a).split()[1]
+        if random:
+            alg_b_str = 'random'
+        else:
+            alg_b_str = str(algo_b).split()[1]
+        
+        true_tot, a_tot_p, b_tot_p = evaluate_general(theta, alpha, sigsq, phi, beta, traj_data,
+          TP, state_space,
+          action_space, B, m, M, Ti, learn_rate, reps, opt_policy, T,
+          rewards, init_policy, init_Q, J, centers_x, centers_y,
+          cr_reps, algo_a, algo_b, random=random,
+          save=['results/' + fname + '/' + fname,
+                alg_a_str + '__' + alg_b_str])
+            
+        f = open('results/' + fname + '/' + fname + '.txt', 'w')
+        f.write('D = ' + str(D) + '\n')
+        f.write('MOVE_NOISE = ' + str(MOVE_NOISE) + '\n')
+        f.write('INTERCEPT_ETA = ' + str(INTERCEPT_ETA) + '\n')
+        f.write('INTERCEPT_REW = ' + str(INTERCEPT_REW) + '\n')
+        f.write('WEIGHT = ' + str(WEIGHT) + '\n')
+        f.write('RESCALE = ' + str(RESCALE) + '\n')
+        f.write('RESET = ' + str(RESET) + '\n')
+        f.write('COEF = ' + str(COEF) + '\n')
+        f.write('GAM = ' + str(GAM) + '\n')
+        f.write('ETA_COEF = ' + str(ETA_COEF) + '\n')
+        f.write('M = ' + str(M) + '\n')
+        f.write('N = ' + str(N) + '\n')
+        f.write('J = ' + str(J) + '\n')
+        f.write('T = ' + str(T) + '\n')
+        f.write('Ti = ' + str(Ti) + '\n')
+        f.write('B = ' + str(B) + '\n')
+        f.write('Q_ITERS = ' + str(Q_ITERS) + '\n')
+        f.write('learn_rate = ' + str(learn_rate) + '\n')
+        f.write('cr_reps = ' + str(cr_reps) + '\n')
+        f.write('reps = ' + str(reps) + '\n')
+        f.write('centers_x = ' + str(centers_x) + '\n')
+        f.write('centers_y = ' + str(centers_y) + '\n')
+        f.write('SEED_NUM = ' + str(SEED_NUM) + '\n')
+        f.write('theta_true = ' + str(theta_true) + '\n')
+        f.write('ex_alphas = ' + str(ex_alphas) + '\n')
+        f.write('ex_sigsqs = ' + str(ex_sigsqs) + '\n')
+        f.write('alpha = ' + str(alpha) + '\n')
+        f.write('sigsq = ' + str(sigsq) + '\n')
+        f.write('theta = ' + str(theta) + '\n')
+        f.write('beta = ' + str(beta) + '\n')
+        f.write('phi = ' + str(phi) + '\n')
+            
+        f.write('true_tot = ' + str(true_tot) + '\n')
+        f.write('mean algo_a_tot = ' + str(np.mean(a_tot_p)) + '\n')
+        f.write('mean algo_b_tot = ' + str(np.mean(b_tot_p)) + '\n')
+        f.close()
 
     
-
-
 # Initializations
 #np.random.seed(1)
 for seed in [20,40,60,80,100]:
@@ -1140,10 +1251,10 @@ for seed in [20,40,60,80,100]:
     sigsq3 = 2
     sigsq4 = 2
     '''
-    sigsq1 = 10#0.1#0.01
-    sigsq2 = 10#0.1#0.01
-    sigsq3 = 10#0.1#0.01
-    sigsq4 = 10#0.1#0.01
+    sigsq1 = 1.5#0.8#0.1#0.01
+    sigsq2 = 1.5#0.8#0.1#0.01
+    sigsq3 = 1.5#0.8#0.1#0.01
+    sigsq4 = 1.5#0.8#0.1#0.01
     
     ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4])
     ex_sigsqs = np.array([sigsq1, sigsq2, sigsq3, sigsq4])
@@ -1398,6 +1509,8 @@ To do:
      * Check action-value distribution vs next-step reward distribution, check
      that the reason robust to Boltz isn't just that those distributions are
      v similar
+     * compare diff sigsqs for different experts
+     * test on MCMC...
      
 QUALITATIVE NOTES:
     * Good performance is basically elusive in large D MDPs when beta is allowed
@@ -1423,4 +1536,50 @@ Future directions:
     k-step rewards...
     * robustness - avoiding cases where the algo hallucinates high pos reward
     in a high NEGATIVE state(s) and anti-optimizes
+'''
+
+
+######
+'''
+DEFAULTS FOR PARAMS:
+    D=16 #8 #6x
+    MOVE_NOISE = 0.05
+    INTERCEPT_ETA = 0
+    WEIGHT = 2
+    RESCALE = 1
+    RESET = 20
+    COEF = 0.1
+    ETA_COEF = 0.01
+    GAM = 0.9
+    M = 20 # number of actions used for importance sampling
+    N = 100 #20 #100 #2000 # number of trajectories per expert
+    J = 20 #10 # should be 30....
+    T = 50
+    Ti = 20 # length of trajectory
+    B = 50 #100 # number of betas/normals sampled for expectation
+    Q_ITERS = 30000 #50000
+    learn_rate = 0.5 #0.0001
+    cr_reps = 10
+    reps = 5
+    sigsqs = 0.1 for all experts
+'''
+######
+
+
+'''
+Results I've recorded:
+    * det_pos vs random; sigsq = 1.5
+    * det_pos vs unif; sigsq = 1.5; ETA_COEF = 5
+    * det_pos vs AR_AEVB; sigsq = 0.8 - both suck but AEVB sometimes does well
+    * det_pos vs AR_AEVB; sigsq = 0.1 - det consistently sucks here
+    * det_pos vs AR_AEVB; sigsq = 0.01 - still det sucks, weird, it used to work
+    * det_pos vs AR_AEVB; sigsq = 0.01, learn_rate = 0.0001 - barely changes from
+    init_theta so both are consistently bad
+    
+    * det_pos vs AR_AEVB; sigsq = 0.01; learn_rate = 0.1; init sigsq = 0;
+    N = 500 - now AEVB seems to do much better at least on seed 20, 40, but det
+    does a bit worse;
+    
+Turns out the reason det pos was working before was that sigsq was initialized
+to correct...
 '''
