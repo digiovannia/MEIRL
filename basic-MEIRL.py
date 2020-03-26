@@ -219,6 +219,20 @@ def beta_func(alpha, sigsq):
     muvals = mu_all(alpha)
     return muvals + noise
 
+def expect_reward_all(rewards, TP):
+    '''
+    Next-step reward equivalent of table of Q values
+    '''
+    grid = np.mgrid[0:4,0:256]
+    return TP[grid[1],grid[0]].dot(np.ravel(rewards)).reshape(4,D,D)
+
+def compare_myo_opt(rewards, TP, Q):
+    er = expect_reward_all(rewards, TP)
+    sns.heatmap(np.argmax(er, axis=0))
+    plt.show()
+    sns.heatmap(np.argmax(Q, axis=2))
+    plt.show()
+
 ### Model functions
 
 def psi_all_states(state_space, centers_x, centers_y):
@@ -240,13 +254,6 @@ def arr_expect_reward(rewards, data, TP, state_space):
     Expected next-step reward for an array of states and actions
     '''
     return TP[data[:,0], data[:,1]].dot(np.ravel(rewards))
-
-def expect_reward_all(rewards, TP):
-    '''
-    Next-step reward equivalent of table of Q values
-    '''
-    grid = np.mgrid[0:4,0:256]
-    return TP[grid[1],grid[0]].dot(np.ravel(rewards)).reshape(4,D,D)
 
 def grad_lin_rew(data, state_space, centers_x, centers_y):
     '''
