@@ -97,6 +97,8 @@ def transition(state_space, action_space):
                             TP[s,a,state_index((x2,y2))] += 1 - MOVE_NOISE
     return TP
 
+### Functions for generating trajectories
+
 def grid_step(s, a):
     '''
     Given current state s (in tuple form) and action a, returns resulting state.
@@ -107,9 +109,7 @@ def grid_step(s, a):
     new_state = s + act_to_coord(a)
     return np.minimum(np.maximum(new_state, 0), D-1)
 
-### Functions for generating trajectories
-
-def episode(s,T,policy,rewards,a=-1):
+def episode(s, T, policy, rewards, a=-1):
     '''
     Given any generic state, time horizon, policy, and reward structure indexed
     by the state, generates an episode starting from that state.
@@ -128,24 +128,9 @@ def episode(s,T,policy,rewards,a=-1):
     reward_list.append(rewards[tuple(s)])
     return np.array(states), actions, reward_list
 
-###
-
-def visualize_policy(rewards, policy):
-    '''
-    Heatmap representing the input policy in the state space.
-    '''
-    pol = np.argmax(policy, axis=2)
-    sns.heatmap(rewards)
-    for x in range(D):
-        for y in range(D):
-            dx = (pol[x,y] % 2)*0.2*(2 - pol[x,y])
-            dy = ((pol[x,y]-1) % 2)*0.2*(pol[x,y] - 1)
-            plt.arrow(y+0.5,x+0.5,dx,dy,head_width=0.1,
-                      color="black",alpha=0.9)
-
 def value_iter(state_space, action_space, rewards, TP, gam, tol):
     '''
-    Action-value iteration for use when transition dynamics are known.
+    Action-value iteration for Q* and optimal policy (using known TPs)
     '''
     Q = np.random.rand(D**2, 4)
     delta = np.inf
@@ -174,17 +159,55 @@ def eta(st):
       RESCALE*np.exp(-ETA_COEF*((st[0]-(D-2))**2+(st[1]-1)**2)),
       INTERCEPT_ETA])
 
-def mu(s, alpha):
+def synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
+                       init_state_sample, TP, Q=False):
     '''
-    Mean of distribution for beta
+    Generates trajectory based on myopic policy by default, or by Q-value-based
+    policy if a Q array is supplied.
     '''
-    return np.dot(eta(s), alpha)
+    s = init_state_sample(state_space)
+    states = [s]
+    beta = np.dot(eta(s), alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
+    if type(Q) == np.ndarray:
+        a = np.random.choice(action_space, p = softmax(Q[s[0],s[1]], beta))
+    else:
+        a = np.random.choice(action_space, p = myo_policy(beta, s, TP, rewards))
+    actions = [a]
+    for _ in range(Ti-1):
+        s = grid_step(s,a)
+        states.append(s)
+        beta = np.dot(eta(s), alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
+        if type(Q) == np.ndarray:
+            a = np.random.choice(action_space, p = softmax(Q[s[0],s[1]], beta))
+        else:
+            a = np.random.choice(action_space, p = myo_policy(beta, s, TP,
+              rewards))
+        actions.append(a)
+    return list(multi_state_index(np.array(states))), actions
+
+### Functions for visualizing
+
+def visualize_policy(rewards, policy):
+    '''
+    Heatmap representing the input policy in the state space.
+    '''
+    pol = np.argmax(policy, axis=2)
+    sns.heatmap(rewards)
+    for x in range(D):
+        for y in range(D):
+            dx = (pol[x,y] % 2)*0.2*(2 - pol[x,y])
+            dy = ((pol[x,y]-1) % 2)*0.2*(pol[x,y] - 1)
+            plt.arrow(y+0.5,x+0.5,dx,dy,head_width=0.1,
+                      color="black",alpha=0.9)
 
 def mu_all(alpha):
+    '''
+    Visualizing mean of beta function for all states
+    '''
     muvals = np.zeros((D,D))
     for i in range(D):
         for j in range(D):
-            muvals[i,j] = mu((i,j), alpha)
+            muvals[i,j] = np.dot(eta((i,j)), alpha)
     return muvals
 
 def beta_func(alpha, sigsq):
@@ -243,32 +266,6 @@ def myo_policy(beta, s, TP, rewards):
     '''
     expect_rew = TP[state_index(s)].dot(np.ravel(rewards))
     return softmax(expect_rew, beta)
-
-def synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
-                       init_state_sample, TP, Q=False):
-    '''
-    Generates trajectory based on myopic policy by default, or by Q-value-based
-    policy if a Q array is supplied.
-    '''
-    s = init_state_sample(state_space)
-    states = [s]
-    beta = mu(s, alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
-    if type(Q) == np.ndarray:
-        a = np.random.choice(action_space, p = softmax(Q[s[0],s[1]], beta))
-    else:
-        a = np.random.choice(action_space, p = myo_policy(beta, s, TP, rewards))
-    actions = [a]
-    for _ in range(Ti-1):
-        s = grid_step(s,a)
-        states.append(s)
-        beta = mu(s, alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
-        if type(Q) == np.ndarray:
-            a = np.random.choice(action_space, p = softmax(Q[s[0],s[1]], beta))
-        else:
-            a = np.random.choice(action_space, p = myo_policy(beta, s, TP,
-              rewards))
-        actions.append(a)
-    return list(multi_state_index(np.array(states))), actions
 
 '''
 It appears that sigsq (and hence beta) can make a difference in the 
