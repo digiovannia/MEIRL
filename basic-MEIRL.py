@@ -642,7 +642,6 @@ def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     alpha_m = np.zeros_like(alpha)
     sigsq_m = np.zeros_like(sigsq)
     t = 1
-    # while error > eps:
     for _ in range(reps):
         permut = list(np.random.permutation(range(N)))
         for n in permut:
@@ -707,7 +706,6 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     last_lpd = -np.inf
     # maybe don't need to resample normals every time? testing this out
     normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
-    # while error > eps:
     for _ in range(reps):
         permut = list(np.random.permutation(range(N)))
         for n in permut:#permut[20:30]:
@@ -807,7 +805,6 @@ def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     time_since_best = 0
     t = 1
     start_lr = learn_rate
-    # while error > eps:
     for _ in range(reps):
         permut = list(np.random.permutation(range(N)))
         for n in permut:
@@ -948,15 +945,12 @@ def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     '''
     y_t is the function used to define modified iterate for Nesterov, if
     applicable
-    
-    update is e.g. GD or Adam
     '''
     impa = list(np.random.choice(action_space, M))
     N = len(traj_data)
     theta_m = np.zeros_like(theta)
     beta_m = np.zeros_like(beta)
     t = 1
-    # while error > eps:
     for _ in range(reps):
         permut = list(np.random.permutation(range(N)))
         for n in permut:
@@ -1000,17 +994,16 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False):
     RESCALE = 1
     RESET = 20
     COEF = 0.1
-    ETA_COEF = 0.01 #0.05 #0.1 #1
+    ETA_COEF = 5#0.01 #0.05 #0.1 #1
     GAM = 0.9
     M = 20 # number of actions used for importance sampling
-    N = 2000#500#100#20 #100 #2000 # number of trajectories per expert
+    N = 100#20 #100 #2000 # number of trajectories per expert
     J = 20#10 # should be 30....
     T = 50
     Ti = 20 # length of trajectory
     B = 50#100 # number of betas/normals sampled for expectation
-    Q_ITERS = 30000#50000
     INTERCEPT_REW = 0
-    learn_rate = 0.1#0.5 #0.0001
+    learn_rate = 0.5 #0.0001
     cr_reps = 10
     reps = 5
     state_space = np.array([(i,j) for i in range(D) for j in range(D)])
@@ -1025,10 +1018,10 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False):
     p = alpha1.shape[0]
     m = 4
 
-    sigsq1 = 0.01
-    sigsq2 = 0.01
-    sigsq3 = 0.01
-    sigsq4 = 0.01
+    sigsq1 = 2#0.01
+    sigsq2 = 2#0.01
+    sigsq3 = 2#0.01
+    sigsq4 = 2#0.01
     
     ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4])
     ex_sigsqs = np.array([sigsq1, sigsq2, sigsq3, sigsq4])
@@ -1576,6 +1569,10 @@ Results I've recorded:
     * det_pos vs AR_AEVB; sigsq = 0.01; learn_rate = 0.1; init sigsq = 0;
     N = 500 - now AEVB seems to do much better on all seeds; but det
     does a bit worse;
+    * AR_AEVB vs random; sigsq = 0.01; learn_rate = 0.1; init sigsq = 1e-16; N = 2000:
+        extra samples don't help, in fact does worse than with N = 500
+    * unif vs random; sigsq = 2; init sigsq = 1e-16; ETA_COEF = 5 -- there should
+    be basically no signal for the algorithm to learn from here...
     
 Turns out the reason det pos was working before was that sigsq was initialized
 to correct...
