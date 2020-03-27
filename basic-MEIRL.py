@@ -890,6 +890,9 @@ def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
               
             g_theta = theta_grad_det(data, beta, state_space, glogZ_theta, centers_x, centers_y)
             g_alpha = alpha_grad_det(glogZ_alpha, R_all, E_all)
+            
+            g_theta = g_theta / np.linalg.norm(g_theta)
+            g_alpha = g_alpha / np.linalg.norm(g_alpha, 'f')
           
             theta_m, alpha_m, = theta, alpha
             theta = y_theta + learn_rate*g_theta
@@ -940,6 +943,9 @@ def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
               
             g_theta = theta_grad_unif(data, y_beta, state_space, glogZ_theta, centers_x, centers_y)
             g_beta = beta_grad_unif(glogZ_beta, R_all)
+            
+            g_theta = g_theta / np.linalg.norm(g_theta)
+            g_beta = g_beta / np.linalg.norm(g_beta)
           
             theta_m, beta_m = theta, beta
             theta, beta = GD_unif(y_theta, y_beta, g_theta, g_beta, learn_rate)
@@ -967,7 +973,11 @@ the feature expect too but they don't show this robustness.
 GRADIENT CLIP FOR ALL?
 '''
 
-def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False):
+seeds_1 = [20,40,60,80,100]
+seeds_2 = [120,140,160,180,200]
+
+def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
+                 test_data='myo', seeds=seeds_1):
     
     # Global params
     global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, RESCALE, RESET, COEF
@@ -980,13 +990,13 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False):
     RESCALE = 1
     RESET = 20
     COEF = 0.1
-    ETA_COEF = 5#0.01 #0.05 #0.1 #1
+    ETA_COEF = 0.01 #0.05 #0.1 #1
     GAM = 0.9
     M = 20 # number of actions used for importance sampling
     N = 100#20 #100 #2000 # number of trajectories per expert
     J = 20#10 # should be 30....
     T = 50
-    Ti = 20 # length of trajectory
+    Ti = 50 # length of trajectory
     B = 50#100 # number of betas/normals sampled for expectation
     INTERCEPT_REW = 0
     learn_rate = 0.5 #0.0001
@@ -1016,7 +1026,7 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False):
     init_policy = stoch_policy(init_det_policy, action_space)
     init_Q = np.random.rand(D,D,4)
     
-    for seed in [20,40,60,80,100]:
+    for seed in seeds:
         filename = '_'.join(str(datetime.datetime.now()).split())
         fname = str(id_num) + '$' + filename.replace(':', '--')
         os.mkdir('results/' + fname)
@@ -1033,7 +1043,7 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False):
         plt.savefig('results/' + fname + '/' + 'true_reward.png')
         plt.show()
         
-        opt_policy, Q = value_iter(state_space, action_space, rewards, TP, 0.9, 1e-5)
+        opt_policy, Q = value_iter(state_space, action_space, rewards, TP, GAM, 1e-5)
         
         phi = np.random.rand(m,2)
         alpha = np.random.normal(size=(m,p), scale=0.05)
@@ -1046,6 +1056,7 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False):
                              init_state_sample, TP, m)
         boltz_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
                              init_state_sample, TP, m, Q)
+        #dumb_data = [[([0]*50, [0]*50) for _ in range(4)] for _ in range(100)]
         
         alg_a_str = str(algo_a).split()[1]
         if random:
@@ -1053,13 +1064,23 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False):
         else:
             alg_b_str = str(algo_b).split()[1]
         
-        true_tot, a_tot_p, b_tot_p = evaluate_general(theta, alpha, sigsq, phi, beta, traj_data,
-          TP, state_space,
-          action_space, B, m, M, Ti, learn_rate, reps, opt_policy, T,
-          rewards, init_policy, init_Q, J, centers_x, centers_y,
-          cr_reps, algo_a, algo_b, random=random,
-          save=['results/' + fname + '/' + fname,
-                alg_a_str + '__' + alg_b_str])
+        if test_data == 'myo':
+            true_tot, a_tot_p, b_tot_p = evaluate_general(theta, alpha, sigsq, phi, beta, 
+                                                         traj_data,
+              TP, state_space,
+              action_space, B, m, M, Ti, learn_rate, reps, opt_policy, T,
+              rewards, init_policy, init_Q, J, centers_x, centers_y,
+              cr_reps, algo_a, algo_b, random=random,
+              save=['results/' + fname + '/' + fname,
+                    alg_a_str + '__' + alg_b_str])
+        else:
+            true_tot, a_tot_p, b_tot_p = evaluate_general(theta, alpha, sigsq, phi, beta, boltz_data,
+              TP, state_space,
+              action_space, B, m, M, Ti, learn_rate, reps, opt_policy, T,
+              rewards, init_policy, init_Q, J, centers_x, centers_y,
+              cr_reps, algo_a, algo_b, random=random,
+              save=['results/' + fname + '/' + fname,
+                    alg_a_str + '__' + alg_b_str])
             
         f = open('results/' + fname + '/' + fname + '.txt', 'w')
         f.write('D = ' + str(D) + '\n')
@@ -1092,12 +1113,14 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False):
         f.write('theta = ' + str(theta) + '\n')
         f.write('beta = ' + str(beta) + '\n')
         f.write('phi = ' + str(phi) + '\n')
+        f.write('test_data = ' + str(test_data) + '\n')
             
         f.write('true_tot = ' + str(true_tot) + '\n')
         f.write('mean algo_a_tot = ' + str(np.mean(a_tot_p)) + '\n')
         f.write('mean algo_b_tot = ' + str(np.mean(b_tot_p)) + '\n')
         f.close()
-
+    
+#%%
 
 '''
 How is the unif model so robust???
@@ -1373,8 +1396,30 @@ DEFAULTS FOR PARAMS:
 
 '''
 Results I've recorded:
+    
+seeds 20,40,60,80,100
+19) ETA_COEF = 5, all suck
+20)
+21)
+22)               
+23) like 20 but Ti = 50
+                  
+seeds 120,140,160,180,200
+24) 
+                  
+                  
+
+Added gradient clipping to all algos for >= 23!                  
+                  
+                  
+                  
+    
+**********(NOTE: MAY NEED TO REDO EVERYTHING BETWEEN #3 and #18)***************
+    
     * det_pos vs random; sigsq = 1.5
     * det_pos vs unif; sigsq = 1.5; ETA_COEF = 5
+     - mostly sucks, but this isn't surprising bc noise drowns it out; this is
+     good, means unif isn't cheating
     * det_pos vs AR_AEVB; sigsq = 0.8 - both suck but AEVB sometimes does well
     * det_pos vs AR_AEVB; sigsq = 0.1 - det consistently sucks here
     * det_pos vs AR_AEVB; sigsq = 0.01 - still det sucks, weird, it used to work
@@ -1394,8 +1439,28 @@ Results I've recorded:
     other random draw)
       - how on earth is this going so well, when ETA_COEF is so high (and hence
       signal should be drowned out)?
+    * det_pos vs unif; sigsq = 1.5; ETA_COEF = 0.01 - so now there's at least
+    some signal, but large sigsq still may be an issue
+      - Interestingly, they both do quite well, though det occasionally anti-optimizes.
+      It seems the algorithms are able to recover the signal amid strong noise in
+      sampling of beta, but not so much a complete lack of expertise
+    * same as above but now on BOLTZ data:
+      - det does worse but still better than random, unif does *better*...
     
 Turns out the reason det pos was working before was that sigsq was initialized
 to correct...
 * Or not? Does quite well in case where init sigsq is 1e-16 but true is 1.5
+
+
+
+
+Did a sanity check with junk data (0s for all states and actions) - unif sucks
+with this input, so it's not cheating evidently
+
+Maybe also check on junk data less trivial than above - demonstrator equally
+likely to take each action in each state
+
+
+
+
 '''
