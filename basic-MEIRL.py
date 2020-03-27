@@ -13,7 +13,7 @@ direction, stays in place.
 Actions: 0 = up, 1 = right, 2 = down, 3 = left
 '''
 
-### Helper functions
+############################### Helper functions #############################
 
 def log_mean_exp(tensor):
     '''
@@ -37,7 +37,7 @@ def softmax(v, beta, axis=False):
         z = np.sum(w)
         return w / z
     
-### Grid world functions
+########################### Grid world functions #############################
 
 def manh_dist(p1, p2):
     return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
@@ -97,7 +97,7 @@ def transition(state_space, action_space):
                             TP[s,a,state_index((x2,y2))] += 1 - MOVE_NOISE
     return TP
 
-### Functions for generating trajectories
+################# Functions for generating trajectories ######################
 
 def grid_step(s, a):
     '''
@@ -185,7 +185,7 @@ def synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
         actions.append(a)
     return list(multi_state_index(np.array(states))), actions
 
-### Functions for visualizing
+####################### Functions for visualizing ############################
 
 def visualize_policy(rewards, policy):
     '''
@@ -233,7 +233,7 @@ def compare_myo_opt(rewards, TP, Q):
     sns.heatmap(np.argmax(Q, axis=2))
     plt.show()
 
-### Model functions
+################################ Model functions #############################
 
 def psi_all_states(state_space, centers_x, centers_y):
     '''
@@ -996,7 +996,7 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
     N = 100#20 #100 #2000 # number of trajectories per expert
     J = 20#10 # should be 30....
     T = 50
-    Ti = 50 # length of trajectory
+    Ti = 20 # length of trajectory
     B = 50#100 # number of betas/normals sampled for expectation
     INTERCEPT_REW = 0
     learn_rate = 0.5 #0.0001
@@ -1402,10 +1402,20 @@ seeds 20,40,60,80,100
 20)
 21)
 22)               
-23) like 20 but Ti = 50
-                  
+23) like #20 but Ti = 50; interestingly the results barely change for seed 20, seems
+                  insensitive to trajectory length at least above 20 - good
+                  news for sample complexity
+ - or maybe not, seed 40, 60 det takes a big hit; on 80 both do worse.
+ - helps on seed 100 tho
+24) now Ti = 21, trying to see if just extremely sensitive to change in seed order
+ - not *too* drastic a change from #20
+ - pretty strong change (~400 difference) from #20 on seed 60
+ - I guess not surprising since this shifts back the random seed determining
+   start states -- could try to make this consistent...?
+                
+   
 seeds 120,140,160,180,200
-24) 
+25) 
                   
                   
 
