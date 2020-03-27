@@ -109,7 +109,7 @@ def grid_step(s, a):
     new_state = s + act_to_coord(a)
     return np.minimum(np.maximum(new_state, 0), D-1)
 
-def episode(s, T, policy, rewards, a=-1):
+def episode(s, T, policy, rewards, action_space, a=-1):
     '''
     Given any generic state, time horizon, policy, and reward structure indexed
     by the state, generates an episode starting from that state.
@@ -282,13 +282,7 @@ It appears that sigsq (and hence beta) can make a difference in the
 trajectories, but it takes a lot of variation to change things...?
 '''
 
-def test(pdist, N):
-    actions = np.array([0,0,0,0])
-    for i in range(N):
-        actions[np.random.choice(action_space, p=pdist)] += 1
-    return actions / N
-
-def see_trajectory(reward_map, state_seq):
+def see_trajectory(reward_map, state_seq, state_space):
     '''
     Input state seq is in index form; can transform to tuples
     '''
@@ -421,8 +415,8 @@ def sigsq_grad(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all, gvec):
     result = -glogZ_sigsq + x[:,None] + y - z + w - q_grad[:,None]
     return np.mean(result, axis=1)
 
-def logZ(normals, meanvec, denom, impa, theta, data, M, TP,
-            R_all, E_all, action_space, centers_x, centers_y):
+def logZ(sigsq, normals, meanvec, denom, impa, theta, data, M, TP, R_all, E_all,
+         action_space, centers_x, centers_y, state_space, m, Ti):
     reward_est = lin_rew_func(theta, state_space, centers_x, centers_y)
     R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
                       imp_samp_data(data, impa, j, m, Ti).astype(int),
@@ -477,10 +471,10 @@ def theta_grad(glogZ_theta, data, state_space, R_all, E_all, sigsq, alpha,
     result = -glogZ_theta + np.einsum('ijk,ik->ij', gradR, X)[:,None,:]
     return np.sum(np.mean(result, axis=1), axis=0)
 
-def cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards):
+def cumulative_reward(s_list, cr_reps, policy, T, state_space, action_space, rewards):
     reward_list = []
     for i in range(cr_reps):
-        ret = episode(s_list[i],T,policy,rewards)[2] #true reward
+        ret = episode(s_list[i], T, policy, rewards, action_space)[2] #true reward
         reward_list.extend(ret)
     return reward_list
 
@@ -490,7 +484,8 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                      cr_reps, algo_a, algo_b, random=False, save=False):
     start = datetime.datetime.now()
     s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
-    true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space, rewards)
+    true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space,
+      action_space, rewards)
     plt.plot(np.cumsum(true_rew), color='b') 
     true_total = np.sum(true_rew)
     totals = [[],[]]
@@ -500,7 +495,7 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
           state_space, action_space, B, m, M, Ti, learn_rate, reps, centers_x,
           centers_y, plot=False)[0]
         if random:
-            tb = np.random.normal(size=d)
+            tb = np.random.normal(size=theta.shape)
         else:
             tb = algo_b(theta, alpha, sigsq, phi, beta,
               traj_data, TP, state_space, action_space, B, m, M, Ti, learn_rate,
@@ -512,7 +507,7 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             est_policy = value_iter(state_space, action_space, reward_est, TP,
               GAM, 1e-5)[0]
             est_rew = cumulative_reward(s_list, cr_reps, est_policy, T,
-              state_space, rewards)
+              state_space, action_space, rewards)
             plt.plot(np.cumsum(est_rew), color=cols[i])
             totals[i].append(np.sum(est_rew))
         sec = (datetime.datetime.now() - start).total_seconds()
@@ -645,8 +640,10 @@ def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
             meanvec, denom, gvec, gnorm = grad_terms(normals,
               y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
-            logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ(normals,
-              meanvec, denom, impa, y_theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
+            logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ(y_sigsq,
+                                                                             normals,
+              meanvec, denom, impa, y_theta, data, M, TP, R_all, E_all, action_space,
+              centers_x, centers_y, state_space, m, Ti)
           
             logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
               logZvec, meanvec, denom)
@@ -706,8 +703,10 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
             meanvec, denom, gvec, gnorm = grad_terms(normals,
               y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
-            logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ(normals,
-              meanvec, denom, impa, y_theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
+            logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ(y_sigsq,
+                                                                             normals,
+              meanvec, denom, impa, y_theta, data, M, TP, R_all, E_all, action_space,
+              centers_x, centers_y, state_space, m, Ti)
           
             logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
               logZvec, meanvec, denom)
@@ -795,8 +794,9 @@ def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             meanvec, denom, gvec, gnorm = grad_terms(normals,
               y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
             (logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq,
-              glogZ_phi) = logZ(normals, meanvec, denom, impa, y_theta,
-              data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
+              glogZ_phi) = logZ(y_sigsq, normals, meanvec, denom, impa, y_theta,
+              data, M, TP, R_all, E_all, action_space, centers_x, centers_y,
+              state_space, m, Ti)
           
             logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m,
               normals, R_all, logZvec, meanvec, denom)
@@ -950,12 +950,19 @@ def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             t += 1
     return theta, beta
 
+def random_algo(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
+         plot=True):
+    return (np.random.normal(size=theta.shape), 0)
+
 '''
 Setting ETA_COEF to 5 (so that experts behave basically randomly everywhere)
 it's evident that the unif model isn't magic. Its robustness in some challenging
 settings still suggests to me that it's using some helpful information -
 could the feature expectations really help that much? The other algos have
 the feature expect too but they don't show this robustness.
+ -- Plus, feature expects *depend on the states visited in the trajectories*. If
+ the trajectories are noisy, so will the feature expectations be.
 
 
 GRADIENT CLIP FOR ALL?
@@ -996,10 +1003,10 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False):
     p = alpha1.shape[0]
     m = 4
 
-    sigsq1 = 2#0.01
-    sigsq2 = 2#0.01
-    sigsq3 = 2#0.01
-    sigsq4 = 2#0.01
+    sigsq1 = 1.5#2#0.01
+    sigsq2 = 1.5#2#0.01
+    sigsq3 = 1.5#2#0.01
+    sigsq4 = 1.5#2#0.01
     
     ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4])
     ex_sigsqs = np.array([sigsq1, sigsq2, sigsq3, sigsq4])
@@ -1029,7 +1036,8 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False):
         
         phi = np.random.rand(m,2)
         alpha = np.random.normal(size=(m,p), scale=0.05)
-        sigsq = 1e-16 + np.zeros(m) #np.random.rand(m)
+        #sigsq = 1e-16 + np.zeros(m)
+        sigsq = np.random.rand(m)
         beta = np.random.rand(m)
         theta = np.random.normal(size=d) #np.zeros_like(theta_true)
         
@@ -1090,175 +1098,6 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False):
         f.write('mean algo_b_tot = ' + str(np.mean(b_tot_p)) + '\n')
         f.close()
 
-    
-# Initializations
-#np.random.seed(1)
-for seed in [20,40,60,80,100]:
-    SEED_NUM = seed#100#50#80#70#60
-    np.random.seed(SEED_NUM) #50) #40) #30) #20) #10)
-    
-    # Global params
-    D=16 #8 #6x
-    MOVE_NOISE = 0.05
-    '''
-    INTERCEPT_ETA = 3 # best for D=16
-    WEIGHT = 0.2
-    '''
-    INTERCEPT_ETA = 0
-    WEIGHT = 2
-    RESCALE = 1
-    RESET = 20
-    COEF = 0.1
-    ETA_COEF = 0.01 #0.01 #0.05 #0.1 #1
-    GAM = 0.9
-    '''
-    Changing the above to see if making the experts suboptimal in a larger space
-    makes the difference between det and unif more stark
-    '''
-    M = 20 # number of actions used for importance sampling
-    N = 100#20 #100 #2000 # number of trajectories per expert
-    J = 20#10 # should be 30....
-    T = 50
-    Ti = 20 # length of trajectory
-    B = 50#100 # number of betas/normals sampled for expectation
-    Q_ITERS = 30000#50000
-    learn_rate = 0.5 #0.0001
-    cr_reps = 10
-    reps = 5
-    
-    '''
-    # Used in second wave of experiments, when D = 8
-    centers_x = [0, D-2, 3, D-1]
-    centers_y = [2, D-1, D-2, 0]
-    '''
-    centers_x = np.random.choice(D, D//2)
-    centers_y = np.random.choice(D, D//2)
-    d = D // 2 + 1
-    
-    
-    # Making gridworld
-    state_space = np.array([(i,j) for i in range(D) for j in range(D)])
-    action_space = list(range(4))
-    TP = transition(state_space, action_space)
-    theta_true = np.random.normal(size = D // 2 + 1, scale=3)
-    '''
-    Trying out a more sparse-reward MDP (N = 20):
-        Results (SEED 50):
-            ETA_COEF 0.01: seems det and unif do roughly as well; only half as much reward
-        as optimal though
-            ETA_COEF 0.05: det does well about 2/3 of the time! unif much less so,
-            only hits 1 out of 10. So evidently the setting where det is competitive
-            is when reward is sparse, and expertise is also sparse
-            * Next trying this same ETA_COEF, but with experts covering every 
-            corner --> both do better, unif gets much better
-            * Next trying same ETA_COEF, covering every corner, but with N=200
-            --> both do much better, det gets pretty close to opt, but unif is close
-            too
-            * next keeping N=200, but going back to experts not covering every; weirdly,
-            now unif does *better* than det, and unif only ~300 while 1000 true_tot
-            * at N=1000, back to det doing slightly better
-            
-    Switched to SEED 60, N = 20, Ti = 20, ETA_COEF 0.05, experts cover each corner
-    * result: both det and unif suck on this! the ONLY difference between case where
-    both did very well is that the high-reward cluster is now in the bottom-left
-    corner rather than top-left, weird.....
-     - this replicates, consistently bad....
-     
-     
-    Now trying SEED 70, same params, again reward hub is near bottom-left
-    * same problem
-    * when reward max is scaled up to 3.5, unif does much better:
-        - 1400 for true, 600 for det, 970 for unif
-    
-    SEED 80 does a little better, but still not nearly as well as Seed 50; here
-    the reward hub is bottom center-left
-    
-    seed 100 same problem
-    '''
-    #theta_true = np.zeros(d)
-    #theta_true[0] += 5*np.random.rand() #3.5
-    INTERCEPT_REW = 0
-    rewards = lin_rew_func(theta_true, state_space, centers_x, centers_y)
-    sns.heatmap(rewards)
-    plt.show()
-    # Misspecified reward bases?
-    
-    # Alpha vectors for the centers of the grid world
-    # where each expert is closest to optimal.
-    
-    # # (1,1)
-    # # (4,1)
-    
-    
-    
-    alpha1 = np.array([WEIGHT, 0, 0, 0, 1]) # (1,1)
-    alpha2 = np.array([0, 0, WEIGHT, 0, 1]) # (1,4)
-    alpha3 = np.array([0, 0, 0, WEIGHT, 1]) # (4,4)
-    alpha4 = np.array([0, WEIGHT, 0, 0, 1])
-    
-    '''
-    alpha1 = np.array([0, WEIGHT, 0, 0, 1]) # (1,1)
-    alpha2 = np.array([0, 0, WEIGHT, 0, 1]) # (1,4)
-    alpha3 = np.array([0, WEIGHT, 0, 0, 1]) # (4,4)
-    alpha4 = np.array([0, 0, WEIGHT, 0, 1])
-    '''
-    
-    p = alpha1.shape[0]
-    m = 4
-    
-    '''
-    sigsq1 = 25
-    sigsq2 = 25
-    sigsq3 = 25
-    sigsq4 = 25
-    '''
-    
-    '''
-    sigsq1 = 2
-    sigsq2 = 2
-    sigsq3 = 2
-    sigsq4 = 2
-    '''
-    sigsq1 = 1.5#0.8#0.1#0.01
-    sigsq2 = 1.5#0.8#0.1#0.01
-    sigsq3 = 1.5#0.8#0.1#0.01
-    sigsq4 = 1.5#0.8#0.1#0.01
-    
-    ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4])
-    ex_sigsqs = np.array([sigsq1, sigsq2, sigsq3, sigsq4])
-    
-    init_det_policy = np.random.choice([0,1,2,3], size=(D,D))
-    init_policy = stoch_policy(init_det_policy, action_space)
-    init_Q = np.random.rand(D,D,4)
-    opt_policy, Q = value_iter(state_space, action_space, rewards, TP, 0.9, 1e-5)
-    '''
-    NOTE: SWITCHED GAM to 0.9!
-    '''
-    #visualize_policy(rewards, opt_policy)
-    
-    phi = np.random.rand(m,2)
-    alpha = np.random.normal(size=(m,p), scale=0.05)
-    sigsq = np.random.rand(m)
-    beta = np.random.rand(m)
-    theta = np.random.normal(size=d) #np.zeros_like(theta_true)
-    
-    traj_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
-                         init_state_sample, TP, m)
-    boltz_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
-                         init_state_sample, TP, m, Q)
-    # first index is n=1 to N
-    # second index is expert
-    # third is states, actions
-    
-    true_tot, det_tot_p, unif_tot_p = evaluate_general(theta, alpha, sigsq, phi, beta, traj_data,
-                         TP, state_space,
-                         action_space, B, m, M, Ti, learn_rate, reps, opt_policy, T,
-                         rewards, init_policy, init_Q, J, centers_x, centers_y,
-                         cr_reps, AR_AEVB, MEIRL_unif)
-    print('true_tot = ' + str(true_tot))
-    print('mean ar_tot_p = ' + str(np.mean(det_tot_p)))
-    print('mean unif_tot_p = ' + str(np.mean(unif_tot_p)))
-    plt.show()
 
 '''
 How is the unif model so robust???
@@ -1476,6 +1315,7 @@ To do:
      v similar
      * compare diff sigsqs for different experts
      * test on MCMC...
+     * vary seed used for everything *after* definition of the MDP
      
 QUALITATIVE NOTES:
     * Good performance is basically elusive in large D MDPs when beta is allowed
@@ -1548,7 +1388,14 @@ Results I've recorded:
         extra samples don't help, in fact does worse than with N = 500
     * unif vs random; sigsq = 2; init sigsq = 1e-16; ETA_COEF = 5 -- there should
     be basically no signal for the algorithm to learn from here...
+    * det_pos vs unif; sigsq = 2; ETA_COEF = 5; sigsq init 1e-16 -- much better
+    results than the second bullet; I guess initialization responsible, but this
+    is still such a drastic change for one difference (which pushes back every
+    other random draw)
+      - how on earth is this going so well, when ETA_COEF is so high (and hence
+      signal should be drowned out)?
     
 Turns out the reason det pos was working before was that sigsq was initialized
 to correct...
+* Or not? Does quite well in case where init sigsq is 1e-16 but true is 1.5
 '''
