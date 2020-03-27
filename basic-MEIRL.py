@@ -23,6 +23,7 @@ def log_mean_exp(tensor):
     expo = np.exp(tensor - K[:,:,None,:])
     return np.log(np.mean(expo,axis=2)) + K
 
+
 def softmax(v, beta, axis=False):
     '''
     May delete if clause? no need for axis...
@@ -42,15 +43,19 @@ def softmax(v, beta, axis=False):
 def manh_dist(p1, p2):
     return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
 
+
 def act_to_coord(a):
     d = {0: (-1, 0), 1: (0, 1), 2: (1, 0), 3: (0,-1)}
     return d[a]
 
+
 def state_index(tup):
     return D*tup[0] + tup[1]
 
+
 def multi_state_index(states):
     return D*states[:,0]+states[:,1]
+
 
 def stoch_policy(det_policy, action_space):
     '''
@@ -64,6 +69,7 @@ def stoch_policy(det_policy, action_space):
     out = np.zeros((D,D,len(action_space)))
     out[x,y,z] = 1
     return out
+
 
 def transition(state_space, action_space):
     '''
@@ -109,6 +115,7 @@ def grid_step(s, a):
     new_state = s + act_to_coord(a)
     return np.minimum(np.maximum(new_state, 0), D-1)
 
+
 def episode(s, T, policy, rewards, action_space, a=-1):
     '''
     Given any generic state, time horizon, policy, and reward structure indexed
@@ -127,6 +134,7 @@ def episode(s, T, policy, rewards, action_space, a=-1):
         actions.append(a)
     reward_list.append(rewards[tuple(s)])
     return np.array(states), actions, reward_list
+
 
 def value_iter(state_space, action_space, rewards, TP, gam, tol):
     '''
@@ -149,6 +157,7 @@ def value_iter(state_space, action_space, rewards, TP, gam, tol):
             policy[i,j,np.argmax(Q[(16*i+j)])] = 1
     return policy, Q.reshape(D, D, 4)
 
+
 def eta(st):
     '''
     Features for beta function
@@ -158,6 +167,16 @@ def eta(st):
       RESCALE*np.exp(-ETA_COEF*((st[0]-1)**2+(st[1]-(D-2))**2)),
       RESCALE*np.exp(-ETA_COEF*((st[0]-(D-2))**2+(st[1]-1)**2)),
       INTERCEPT_ETA])
+
+
+def myo_policy(beta, s, TP, rewards):
+    '''
+    Policy for myopic expert (action probability proportional to next-step
+    expected reward)
+    '''
+    expect_rew = TP[state_index(s)].dot(np.ravel(rewards))
+    return softmax(expect_rew, beta)
+
 
 def synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
                    TP, Q=False):
@@ -185,6 +204,48 @@ def synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
         actions.append(a)
     return list(multi_state_index(np.array(states))), actions
 
+
+def make_data(alpha, sigsq, rewards, N, Ti, state_space, action_space,
+              TP, m, Q=False):
+    '''
+    Makes a list of N trajectories based on the given parameters and the
+    myopic policy by default, or the Q-value-based policy if Q is provided.
+    '''
+    trajectories = [
+        [synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
+                       TP, Q) for i in range(m)]
+        for _ in range(N)
+    ]
+    return trajectories 
+
+
+def random_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
+                   TP, Q=False):
+    '''
+    '''
+    s = state_space[np.random.choice(len(state_space))]
+    states = [s]
+    a = np.random.choice(action_space)
+    actions = [a]
+    for _ in range(Ti-1):
+        s = grid_step(s,a)
+        states.append(s)
+        a = np.random.choice(action_space)
+        actions.append(a)
+    return list(multi_state_index(np.array(states))), actions
+
+
+def random_data(alpha, sigsq, rewards, N, Ti, state_space, action_space,
+              TP, m, Q=False):
+    '''
+    '''
+    trajectories = [
+        [random_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
+                       TP, Q) for i in range(m)]
+        for _ in range(N)
+    ]
+    return trajectories 
+
 ####################### Functions for visualizing ############################
 
 def visualize_policy(rewards, policy):
@@ -200,6 +261,7 @@ def visualize_policy(rewards, policy):
             plt.arrow(y+0.5,x+0.5,dx,dy,head_width=0.1,
                       color="black",alpha=0.9)
 
+
 def mu_all(alpha):
     '''
     Visualizing mean of beta function for all states
@@ -210,6 +272,7 @@ def mu_all(alpha):
             muvals[i,j] = np.dot(eta((i,j)), alpha)
     return muvals
 
+
 def beta_func(alpha, sigsq):
     '''
     Computes a sample of betas for whole state space.
@@ -219,6 +282,7 @@ def beta_func(alpha, sigsq):
     muvals = mu_all(alpha)
     return muvals + noise
 
+
 def expect_reward_all(rewards, TP):
     '''
     Next-step reward equivalent of table of Q values
@@ -226,15 +290,31 @@ def expect_reward_all(rewards, TP):
     grid = np.mgrid[0:4,0:256]
     return TP[grid[1],grid[0]].dot(np.ravel(rewards)).reshape(4,D,D)
 
-def compare_myo_opt(rewards, TP, Q):
+
+def compare_myo_opt(rewards, TP, Q, save=False):
     '''
     Shows plot of best action with respect to next-step reward vs Q* 
     '''
     er = expect_reward_all(rewards, TP)
     sns.heatmap(np.argmax(er, axis=0))
+    if save:
+        plt.savefig('results/' + save + '/' + 'best_myo.png')
     plt.show()
     sns.heatmap(np.argmax(Q, axis=2))
+    if save:
+        plt.savefig('results/' + save + '/' + 'best_Q.png')
     plt.show()
+    
+    
+def see_trajectory(reward_map, state_seq, state_space):
+    '''
+    Input state seq is in index form; can transform to tuples
+    '''
+    state_seq = [state_space[s] for s in state_seq]
+    for s in state_seq:
+        sns.heatmap(reward_map)
+        plt.annotate('*', (s[1]+0.2,s[0]+0.7), color='b', size=24)
+        plt.show()
 
 ################################ Model functions #############################
 
@@ -248,54 +328,27 @@ def psi_all_states(state_space, centers_x, centers_y):
     inter = INTERCEPT_REW*np.ones(len(state_space))[:,None]
     return np.concatenate((bases, inter), axis=1)
 
+
 def lin_rew_func(theta, state_space, centers_x, centers_y):
     return np.reshape(psi_all_states(state_space, centers_x,
       centers_y).dot(theta), (D, D))
     
+
 def arr_expect_reward(rewards, data, TP, state_space):
     '''
     Expected next-step reward for an array of states and actions
     '''
     return TP[data[:,0], data[:,1]].dot(np.ravel(rewards))
 
+
 def grad_lin_rew(data, state_space, centers_x, centers_y):
     '''
     Gradient of reward function for array of states and actions
     '''
-    probs = TP[data[:,0], data[:,1]] # m x Ti x D**2
+    probs = TP[data[:,0], data[:,1]]
     return np.swapaxes(probs.dot(psi_all_states(state_space, centers_x,
       centers_y)), 1, 2)
 
-def myo_policy(beta, s, TP, rewards):
-    '''
-    Policy for myopic expert (action probability proportional to next-step
-    expected reward)
-    '''
-    expect_rew = TP[state_index(s)].dot(np.ravel(rewards))
-    return softmax(expect_rew, beta)
-
-def see_trajectory(reward_map, state_seq, state_space):
-    '''
-    Input state seq is in index form; can transform to tuples
-    '''
-    state_seq = [state_space[s] for s in state_seq]
-    for s in state_seq:
-        sns.heatmap(reward_map)
-        plt.annotate('*', (s[1]+0.2,s[0]+0.7), color='b', size=24)
-        plt.show()
-
-def make_data(alpha, sigsq, rewards, N, Ti, state_space, action_space,
-              TP, m, Q=False):
-    '''
-    Makes a list of N trajectories based on the given parameters and the
-    myopic policy by default, or the Q-value-based policy if Q is provided.
-    '''
-    trajectories = [
-        [synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
-                       TP, Q) for i in range(m)]
-        for _ in range(N)
-    ]
-    return trajectories 
 
 def RE_all(theta, data, TP, state_space, m, centers_x, centers_y):
     '''
@@ -315,6 +368,7 @@ def RE_all(theta, data, TP, state_space, m, centers_x, centers_y):
     E_all = np.swapaxes(arr, 0, 1)
     return R_all, E_all
 
+
 def imp_samp_data(data, impa, j, m, Ti):
     '''
     Combines states from true data with actions from importance-sampling
@@ -323,12 +377,14 @@ def imp_samp_data(data, impa, j, m, Ti):
     actions = impa[j]*np.ones((m,Ti))
     return np.swapaxes(np.stack((data[:,0,:], actions)), 0, 1)
 
+
 def traj_TP(data, TP, Ti, m):
     '''
     Computes TPs for (s1, a1) to s2, ..., (st-1, at-1) to st in trajectories
     '''
     s2_thru_sTi = TP[data[:,0,:(Ti-1)],data[:,1,:(Ti-1)]]
     return s2_thru_sTi[np.arange(m)[:,None], np.arange(Ti-1), data[:,0,1:]]
+
 
 def GD(phi, theta, alpha, sigsq, g_phi, g_theta, g_alpha, g_sigsq, learn_rate):
     '''
@@ -342,6 +398,7 @@ def GD(phi, theta, alpha, sigsq, g_phi, g_theta, g_alpha, g_sigsq, learn_rate):
     sigsq = np.maximum(sigsq + learn_rate*g_sigsq, 0.01)
     return phi, theta, alpha, sigsq
 
+
 def y_t_nest(phi, phi_m, theta, theta_m, alpha, alpha_m, sigsq, sigsq_m, t):
     '''
     Making intermediate iterates for Nesterov acceleration
@@ -351,6 +408,7 @@ def y_t_nest(phi, phi_m, theta, theta_m, alpha, alpha_m, sigsq, sigsq_m, t):
             theta - const*(theta - theta_m),
             alpha - const*(alpha - alpha_m),
             sigsq - const*(sigsq - sigsq_m))
+
 
 def grad_terms(normals, phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m):
     '''
@@ -364,6 +422,7 @@ def grad_terms(normals, phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m):
     gvec = sc_normals + mn[:,None,:]
     gnorm = np.einsum('ijk,ijk->ij', gvec, gvec) #faster than tensordot, but still p slow
     return meanvec, denom, gvec, gnorm
+
 
 def elbo(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all,
              logZvec, meanvec, denom):
@@ -379,6 +438,7 @@ def elbo(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all,
     lq = -Ti/2*np.log(2*np.pi*denom)[:,None] - epsnorm/2
     return (lp - lq).mean(axis=1).sum()
 
+
 '''
 In the gradient functions that follow, mean over an axis is for the Monte
 Carlo estimate of the expectation with respect to multivariate standard normal.
@@ -393,9 +453,11 @@ def phi_grad(phi, m, Ti, normals, denom, sigsq, glogZ_phi):
     result = -glogZ_phi - np.stack((y1, y2 - Ti/(2*denom)[:,None]))
     return np.swapaxes(np.mean(result, axis=2), 0, 1)
 
+
 def alpha_grad(glogZ_alpha, E_all, R_all):
     result = -glogZ_alpha + np.einsum('ijk,ik->ij', E_all, R_all)[:,None,:]
     return np.mean(result, axis=1)
+
 
 def sigsq_grad(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all, gvec):
     q_grad = -Ti/(2*denom)
@@ -406,6 +468,7 @@ def sigsq_grad(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all, gvec):
     w = 1/(2*sigsq**2)[:,None]*gnorm
     result = -glogZ_sigsq + x[:,None] + y - z + w - q_grad[:,None]
     return np.mean(result, axis=1)
+
 
 def logZ(sigsq, normals, meanvec, denom, impa, theta, data, M, TP, R_all, E_all,
          action_space, centers_x, centers_y, state_space, m, Ti):
@@ -451,6 +514,7 @@ def logZ(sigsq, normals, meanvec, denom, impa, theta, data, M, TP, R_all, E_all,
     glogZ_phi = np.array([(numsum_p1/den).sum(axis=2), (numsum_p2/den).sum(axis=2)])
     return logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi
 
+
 def theta_grad(glogZ_theta, data, state_space, R_all, E_all, sigsq, alpha,
                   centers_x, centers_y):
     '''
@@ -463,12 +527,14 @@ def theta_grad(glogZ_theta, data, state_space, R_all, E_all, sigsq, alpha,
     result = -glogZ_theta + np.einsum('ijk,ik->ij', gradR, X)[:,None,:]
     return np.sum(np.mean(result, axis=1), axis=0)
 
+
 def cumulative_reward(s_list, cr_reps, policy, T, state_space, action_space, rewards):
     reward_list = []
     for i in range(cr_reps):
         ret = episode(s_list[i], T, policy, rewards, action_space)[2] #true reward
         reward_list.extend(ret)
     return reward_list
+
 
 def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                      action_space, B, m, M, Ti, learn_rate, reps, policy, T,
@@ -509,6 +575,7 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
         plt.show()
     return true_total, totals[0], totals[1]
 
+
 def logZ_unif(beta, impa, theta, data, M, TP, state_space, action_space,
               m, Ti, centers_x, centers_y):
     '''
@@ -541,8 +608,10 @@ def logZ_unif(beta, impa, theta, data, M, TP, state_space, action_space,
     glogZ_beta = (numsum_b/den).sum(axis=1)
     return logZvec, glogZ_theta, glogZ_beta # m x N; Not averaged over beta!
 
+
 def beta_grad_unif(glogZ_beta, R_all):
     return -glogZ_beta + R_all.sum(axis=1)
+
 
 def theta_grad_unif(data, beta, state_space, glogZ_theta, centers_x, centers_y):
     '''
@@ -550,6 +619,7 @@ def theta_grad_unif(data, beta, state_space, glogZ_theta, centers_x, centers_y):
     '''
     gradR = grad_lin_rew(data, state_space, centers_x, centers_y) # m x d x Ti 
     return -glogZ_theta + (beta[:,None,None]*gradR).sum(axis=2).sum(axis=0) # each term is quite large
+
 
 def logZ_det(beta, impa, theta, data, M, TP, R_all, E_all, state_space,
              action_space, m, Ti, centers_x, centers_y):
@@ -582,26 +652,32 @@ def logZ_det(beta, impa, theta, data, M, TP, R_all, E_all, state_space,
     glogZ_alpha = (num_a/den[:,None,:]).sum(axis=2)
     return logZvec, glogZ_theta, glogZ_alpha
 
+
 def alpha_grad_det(glogZ_alpha, R_all, E_all):
     return -glogZ_alpha + np.einsum('ijk,ik->ij', E_all, R_all)
+
 
 def theta_grad_det(data, beta, state_space, glogZ_theta, centers_x, centers_y):
     gradR = grad_lin_rew(data, state_space, centers_x, centers_y) # m x d x Ti 
     return -glogZ_theta + np.einsum('ij,ikj->k', beta, gradR)
+
 
 def GD_unif(theta, beta, g_theta, g_beta, learn_rate):
     theta = theta + learn_rate*g_theta
     beta = beta + learn_rate*g_beta
     return theta, beta
 
+
 def y_t_nest_unif(theta, theta_m, beta, beta_m, t):
     const = (t-1)/(t+2)
     return (theta - const*(theta - theta_m),
             beta - const*(beta - beta_m))
 
+
 def loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec):
     logT = np.log(1/len(state_space)) + np.sum(np.log(traj_TP(data, TP, Ti, m)), axis=1)
     return -logZvec + logT + np.einsum('ij,ij->i', beta, R_all)
+
 
 def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
@@ -655,6 +731,7 @@ def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     if plot:
         plt.plot(elbos)
     return theta, phi, alpha, sigsq
+
 
 def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
@@ -747,6 +824,7 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     if plot:
         plt.plot(elbos)
     return best_theta, best_phi, best_alpha, best_sigsq
+
 
 def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
@@ -842,6 +920,7 @@ def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
         plt.plot(elbos)
     return best_theta, best_phi, best_alpha, best_sigsq
 
+
 def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
          plot=True):
@@ -911,6 +990,7 @@ def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
         plt.plot(lik)
     return best_theta, best_alpha
 
+
 def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
          plot=True):
@@ -947,10 +1027,12 @@ def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             t += 1
     return theta, beta
 
+
 def random_algo(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
          plot=True):
     return (np.random.normal(size=theta.shape), 0)
+
 
 '''
 Setting ETA_COEF to 5 (so that experts behave basically randomly everywhere)
@@ -960,10 +1042,8 @@ could the feature expectations really help that much? The other algos have
 the feature expect too but they don't show this robustness.
  -- Plus, feature expects *depend on the states visited in the trajectories*. If
  the trajectories are noisy, so will the feature expectations be.
-
-
-GRADIENT CLIP FOR ALL?
 '''
+
 
 seeds_1 = [20,40,60,80,100]
 seeds_2 = [120,140,160,180,200]
@@ -1037,6 +1117,8 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
         
         opt_policy, Q = value_iter(state_space, action_space, rewards, TP, GAM, 1e-5)
         
+        compare_myo_opt(rewards, TP, Q, save=fname)
+        
         phi = np.random.rand(m,2)
         alpha = np.random.normal(size=(m,p), scale=0.05)
         #sigsq = 1e-16 + np.zeros(m)
@@ -1048,7 +1130,8 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
                              TP, m)
         boltz_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
                              TP, m, Q)
-        #dumb_data = [[([0]*50, [0]*50) for _ in range(4)] for _ in range(100)]
+        dumb_data = random_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
+                             TP, m)
         
         alg_a_str = str(algo_a).split()[1]
         if random:
@@ -1066,7 +1149,8 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
               save=['results/' + fname + '/' + fname,
                     alg_a_str + '__' + alg_b_str])
         else:
-            true_tot, a_tot_p, b_tot_p = evaluate_general(theta, alpha, sigsq, phi, beta, boltz_data,
+            true_tot, a_tot_p, b_tot_p = evaluate_general(theta, alpha, sigsq, phi, beta,
+                                                          dumb_data, #boltz_data,
               TP, state_space,
               action_space, B, m, M, Ti, learn_rate, reps, opt_policy, T,
               rewards, init_policy, init_Q, J, centers_x, centers_y,
@@ -1391,8 +1475,10 @@ Results I've recorded:
     
 seeds 20,40,60,80,100
 19) ETA_COEF = 5, all suck
-20)
-21)
+20) 
+21) like #20 but BOLTZ:
+ * seed 100 has many states where best myopic action is different from
+ best long-term action, yet both algos work very well on the Boltzmann data!
 22)               
 23) like #20 but Ti = 50; interestingly the results barely change for seed 20, seems
                   insensitive to trajectory length at least above 20 - good
@@ -1407,8 +1493,9 @@ seeds 20,40,60,80,100
                 
    
 seeds 120,140,160,180,200
-25) 
-                  
+25) like #20
+26) like #23
+ - both algos *beat the expert* in seed 200!
                   
 
 Added gradient clipping to all algos for >= 23!                  
@@ -1457,7 +1544,7 @@ to correct...
 
 
 Did a sanity check with junk data (0s for all states and actions) - unif sucks
-with this input, so it's not cheating evidently
+with this input, so it's not cheating evidently (*)
 
 Maybe also check on junk data less trivial than above - demonstrator equally
 likely to take each action in each state
@@ -1465,4 +1552,10 @@ likely to take each action in each state
 
 
 
+(*) Testing out hypothesis that the algo is cheating using bases function
+knowledge -- or just doing well because as long as you accidentally find at least one
+high-reward hub you can do well -- by testing it on purely random policy data.
+** Okay, it does much worse than usual on the junk data, but still better 
+than random. Not good.
 '''
+
