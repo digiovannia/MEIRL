@@ -517,7 +517,8 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
         plt.show()
     return true_total, totals[0], totals[1]
 
-def logZ_unif(beta, impa, theta, data, M, TP, action_space, centers_x, centers_y):
+def logZ_unif(beta, impa, theta, data, M, TP, state_space, action_space,
+              m, Ti, centers_x, centers_y):
     '''
     Importance sampling approximation of logZ
     and grad logZ
@@ -558,8 +559,8 @@ def theta_grad_unif(data, beta, state_space, glogZ_theta, centers_x, centers_y):
     gradR = grad_lin_rew(data, state_space, centers_x, centers_y) # m x d x Ti 
     return -glogZ_theta + (beta[:,None,None]*gradR).sum(axis=2).sum(axis=0) # each term is quite large
 
-def logZ_det(beta, impa, theta, data, M, TP, R_all, E_all, action_space,
-             centers_x, centers_y):
+def logZ_det(beta, impa, theta, data, M, TP, R_all, E_all, state_space,
+             action_space, m, Ti, centers_x, centers_y):
     '''
     Importance sampling approximation of logZ
     and grad logZ
@@ -600,9 +601,6 @@ def GD_unif(theta, beta, g_theta, g_beta, learn_rate):
     theta = theta + learn_rate*g_theta
     beta = beta + learn_rate*g_beta
     return theta, beta
-
-def y_t_GD_unif(theta, theta_m, beta, beta_m, t):
-    return phi, beta
 
 def y_t_nest_unif(theta, theta_m, beta, beta_m, t):
     const = (t-1)/(t+2)
@@ -883,7 +881,8 @@ def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             beta = np.einsum('ij,ijk->ik', y_alpha, E_all)
             
             logZvec, glogZ_theta, glogZ_alpha = logZ_det(beta,
-              impa, y_theta, data, M, TP, R_all, E_all, action_space, centers_x, centers_y)
+              impa, y_theta, data, M, TP, R_all, E_all, state_space,
+              action_space, m, Ti, centers_x, centers_y)
           
             loglikelihood = loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec).sum()
             # appears not to be maximized at true theta/alpha, why?
@@ -937,7 +936,7 @@ def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             data = np.array(traj_data[n]) # m x 2 x Ti
             R_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)[0]
             logZvec, glogZ_theta, glogZ_beta = logZ_unif(y_beta, impa,
-              y_theta, data, M, TP, action_space, centers_x, centers_y)
+              y_theta, data, M, TP, state_space, action_space, m, Ti, centers_x, centers_y)
               
             g_theta = theta_grad_unif(data, y_beta, state_space, glogZ_theta, centers_x, centers_y)
             g_beta = beta_grad_unif(glogZ_beta, R_all)
@@ -971,6 +970,8 @@ GRADIENT CLIP FOR ALL?
 def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False):
     
     # Global params
+    global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, RESCALE, RESET, COEF
+    global ETA_COEF, GAM, M, N, J, T, Ti, B, INTERCEPT_REW, TP
     D=16 #8 #6x
     d = D // 2 + 1
     MOVE_NOISE = 0.05
@@ -1077,7 +1078,6 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False):
         f.write('T = ' + str(T) + '\n')
         f.write('Ti = ' + str(Ti) + '\n')
         f.write('B = ' + str(B) + '\n')
-        f.write('Q_ITERS = ' + str(Q_ITERS) + '\n')
         f.write('learn_rate = ' + str(learn_rate) + '\n')
         f.write('cr_reps = ' + str(cr_reps) + '\n')
         f.write('reps = ' + str(reps) + '\n')
