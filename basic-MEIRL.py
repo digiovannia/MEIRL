@@ -160,12 +160,12 @@ def eta(st):
       INTERCEPT_ETA])
 
 def synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
-                       init_state_sample, TP, Q=False):
+                   TP, Q=False):
     '''
     Generates trajectory based on myopic policy by default, or by Q-value-based
     policy if a Q array is supplied.
     '''
-    s = init_state_sample(state_space)
+    s = state_space[np.random.choice(len(state_space))]
     states = [s]
     beta = np.dot(eta(s), alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
     if type(Q) == np.ndarray:
@@ -227,6 +227,9 @@ def expect_reward_all(rewards, TP):
     return TP[grid[1],grid[0]].dot(np.ravel(rewards)).reshape(4,D,D)
 
 def compare_myo_opt(rewards, TP, Q):
+    '''
+    Shows plot of best action with respect to next-step reward vs Q* 
+    '''
     er = expect_reward_all(rewards, TP)
     sns.heatmap(np.argmax(er, axis=0))
     plt.show()
@@ -263,12 +266,6 @@ def grad_lin_rew(data, state_space, centers_x, centers_y):
     return np.swapaxes(probs.dot(psi_all_states(state_space, centers_x,
       centers_y)), 1, 2)
 
-def init_state_sample(state_space):
-    '''
-    Returns initial state index; uniform for simplicity
-    '''
-    return state_space[np.random.choice(len(state_space))]
-
 def myo_policy(beta, s, TP, rewards):
     '''
     Policy for myopic expert (action probability proportional to next-step
@@ -276,11 +273,6 @@ def myo_policy(beta, s, TP, rewards):
     '''
     expect_rew = TP[state_index(s)].dot(np.ravel(rewards))
     return softmax(expect_rew, beta)
-
-'''
-It appears that sigsq (and hence beta) can make a difference in the 
-trajectories, but it takes a lot of variation to change things...?
-'''
 
 def see_trajectory(reward_map, state_seq, state_space):
     '''
@@ -293,14 +285,14 @@ def see_trajectory(reward_map, state_seq, state_space):
         plt.show()
 
 def make_data(alpha, sigsq, rewards, N, Ti, state_space, action_space,
-              init_state_sample, TP, m, Q=False):
+              TP, m, Q=False):
     '''
     Makes a list of N trajectories based on the given parameters and the
     myopic policy by default, or the Q-value-based policy if Q is provided.
     '''
     trajectories = [
         [synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
-                       init_state_sample, TP, Q) for i in range(m)]
+                       TP, Q) for i in range(m)]
         for _ in range(N)
     ]
     return trajectories 
@@ -1053,9 +1045,9 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
         theta = np.random.normal(size=d) #np.zeros_like(theta_true)
         
         traj_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
-                             init_state_sample, TP, m)
+                             TP, m)
         boltz_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
-                             init_state_sample, TP, m, Q)
+                             TP, m, Q)
         #dumb_data = [[([0]*50, [0]*50) for _ in range(4)] for _ in range(100)]
         
         alg_a_str = str(algo_a).split()[1]
@@ -1217,9 +1209,9 @@ theta_star_u, beta_star_u = MEIRL_unif(theta, alpha, sigsq, phi, beta, boltz_dat
 
 # this works p well, when true sigsq is set to 2 and the trajectories come
 # from the truly specified model
-dumb_data = make_data_myopic(alpha_star_2, sigsq_star_2, lin_rew_func(theta_star_2,
+dumb_data = make_data(alpha_star_2, sigsq_star_2, lin_rew_func(theta_star_2,
                             state_space, centers_x, centers_y), N, Ti, state_space, action_space,
-                            init_state_sample, TP, m)
+                            TP, m)
 
 #sns.heatmap(lin_rew_func(theta_true, state_space, centers_x, centers_y))
 
