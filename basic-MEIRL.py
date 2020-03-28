@@ -324,7 +324,7 @@ def psi_all_states(state_space, centers_x, centers_y):
     '''
     dist_x = state_space[:,0][:,None] - centers_x
     dist_y = state_space[:,1][:,None] - centers_y
-    bases = np.exp(-COEF*(dist_x**2 + dist_y**2))*RESCALE[None,:] - 1/2 #VAMPIRE_new
+    bases = np.exp(-COEF*(dist_x**2 + dist_y**2))*RESCALE[None,:] - 1/2
     inter = INTERCEPT_REW*np.ones(len(state_space))[:,None]
     return np.concatenate((bases, inter), axis=1)
 
@@ -486,35 +486,33 @@ def logZ(sigsq, normals, meanvec, denom, impa, reward_est, data, M, TP, R_all, E
         lst.append(feat_expect)
     gradR_Z = np.swapaxes(np.array(lst), 0, 1)
 
+    # Computing logZ
     volA = len(action_space)
     bterm = np.einsum('ijk,ilk->ijlk', meanvec, R_Z)
-    expo = np.exp(bterm)
     lvec = np.log(volA) + log_mean_exp(bterm)
     logZvec = lvec.sum(axis=2)
 
+    # Computing gradients of logZ
     gradR = grad_lin_rew(data, state_space, centers_x, centers_y)
     num1 = sigsq[:,None,None,None]*np.einsum('ijk,ilk->ijlk', R_Z, gradR)
     num2 = np.einsum('ijk,ilmk->ijlmk', meanvec, gradR_Z)
     expo = np.exp(bterm - np.max(bterm, axis=2)[:,:,None,:])
     num = expo[:,:,:,None,:]*(num1[:,None,:,:,:]+num2)
-    numsum = num.sum(axis=2)
     den = expo.sum(axis=2)
-    glogZ_theta = (numsum/den[:,:,None,:]).sum(axis=3)
+    glogZ_theta = (num.sum(axis=2)/den[:,:,None,:]).sum(axis=3)
 
+    num_a = expo[:,:,:,None,:]*np.einsum('ijk,ilk->ijlk', R_Z,
+      E_all)[:,None,:,:,:]
+    glogZ_alpha = (num_a.sum(axis=2)/den[:,:,None,:]).sum(axis=3)
 
-    num_a = expo[:,:,:,None,:]*np.einsum('ijk,ilk->ijlk', R_Z, E_all)[:,None,:,:,:]
-    numsum_a = num_a.sum(axis=2)
-    glogZ_alpha = (numsum_a/den[:,:,None,:]).sum(axis=3)
-
-    num_s = expo*np.einsum('ijk,ilk->iljk', R_Z, R_all[:,None,:] + normals/((2*denom**2)[:,None,None]))
-    numsum_s = num_s.sum(axis=2)
-    glogZ_sigsq = (numsum_s/den).sum(axis=2)
+    normterm = normals/((2*denom**2)[:,None,None])
+    num_s = expo*np.einsum('ijk,ilk->iljk', R_Z, R_all[:,None,:] + normterm)
+    glogZ_sigsq = (num_s.sum(axis=2)/den).sum(axis=2)
 
     num_p1 = expo*R_Z[:,None,:,:]
-    num_p2 = expo*np.einsum('ijk,ilk->iljk', R_Z, normals/((2*denom**2)[:,None,None]))
-    numsum_p1 = num_p1.sum(axis=2)
-    numsum_p2 = num_p2.sum(axis=2)
-    glogZ_phi = np.array([(numsum_p1/den).sum(axis=2), (numsum_p2/den).sum(axis=2)])
+    num_p2 = expo*np.einsum('ijk,ilk->iljk', R_Z, normterm)
+    glogZ_phi = np.array([(num_p1.sum(axis=2)/den).sum(axis=2),
+                          (num_p2.sum(axis=2)/den).sum(axis=2)])
     return logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi
 
 
@@ -555,7 +553,6 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
         ta = algo_a(theta, alpha, sigsq, phi, beta, traj_data, TP,
           state_space, action_space, B, m, M, Ti, learn_rate, reps, centers_x,
           centers_y, plot=False)[0]
-        #VAMPIRE
         if random:
             tb = np.random.normal(size=theta.shape)
         else:
@@ -1117,7 +1114,7 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
         centers_x = np.random.choice(D, D//2)
         centers_y = np.random.choice(D, D//2)
         
-        theta_true = 3*np.random.rand(D // 2 + 1) - 2 #np.random.normal(size = D // 2 + 1, scale=3) #VAMPIRE
+        theta_true = 3*np.random.rand(D // 2 + 1) - 2 #np.random.normal(size = D // 2 + 1, scale=3)
         rewards = lin_rew_func(theta_true, state_space, centers_x, centers_y)
         sns.heatmap(rewards)
         plt.savefig('results/' + fname + '/' + 'true_reward.png')
@@ -1158,7 +1155,7 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
                     alg_a_str + '__' + alg_b_str])
         else:
             true_tot, a_tot_p, b_tot_p = evaluate_general(theta, alpha, sigsq, phi, beta,
-                                                          dumb_data, #boltz_data,
+                                                          boltz_data,
               TP, state_space,
               action_space, B, m, M, Ti, learn_rate, reps, opt_policy, T,
               rewards, init_policy, init_Q, J, centers_x, centers_y,
@@ -1413,8 +1410,6 @@ To do:
      * May need to force reward function to be such that doing well in the MDP
      is hard, i.e. not sufficient to just get one or two "nodes" of the reward
      space correct
-     * Write function that stores the hyperparams/settings and saves results from
-     evaluation
      * Compare performance for different split of steps in Ti vs N (length vs
      number of trajectories)
      * Check action-value distribution vs next-step reward distribution, check
@@ -1424,6 +1419,9 @@ To do:
      * test on MCMC...
      * vary seed used for everything *after* definition of the MDP
      * increase number of features, for same size of MDP
+     * count of states where myo best and opt best differ
+     * look at learning process of meirl-unif on seed 160, boltz data, in detail, how does
+     it work so well?
      
 QUALITATIVE NOTES:
     * Good performance is basically elusive in large D MDPs when beta is allowed
@@ -1475,6 +1473,7 @@ DEFAULTS FOR PARAMS:
     cr_reps = 10
     reps = 5
     sigsqs = 0.1 for all experts
+
 '''
 ######
 
@@ -1512,6 +1511,14 @@ Added gradient clipping to all algos for >= 23!
                   
 ### 100s are results using thetas drawn from uniform, apparently no longer
 have issue where unif does better than random when trained on random data
+ * after that point,     RESCALE = np.array([1,-1] * ((d-1) // 2))
+
+100) meirl_unif vs random  ;  INTERCEPT_REW = -1, sigsqs = 1.5
+101) meirl_det_pos vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1
+102) meirl_det_pos vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_2
+103) meirl_det_pos vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1; boltz
+104) meirl_det_pos vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_2; boltz
+105) AR_AEVB vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1
 
 
 
