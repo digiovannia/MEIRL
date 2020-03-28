@@ -324,7 +324,8 @@ def psi_all_states(state_space, centers_x, centers_y):
     '''
     dist_x = state_space[:,0][:,None] - centers_x
     dist_y = state_space[:,1][:,None] - centers_y
-    bases = np.exp(-COEF*(dist_x**2 + dist_y**2))*RESCALE[None,:] - 1/2
+    signs = np.array([1,-1] * (len(centers_x) // 2))
+    bases = np.exp(-COEF*(dist_x**2 + dist_y**2))*signs[None,:] - 1/2
     inter = INTERCEPT_REW*np.ones(len(state_space))[:,None]
     return np.concatenate((bases, inter), axis=1)
 
@@ -533,13 +534,22 @@ def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     theta_m = np.zeros_like(theta)
     alpha_m = np.zeros_like(alpha)
     sigsq_m = np.zeros_like(sigsq)
-    t = 1
+    y_phi = phi.copy()
+    y_theta = theta.copy()
+    y_alpha = alpha.copy()
+    y_sigsq = sigsq.copy()
+    best = -np.inf
+    best_phi = phi_m.copy()
+    best_theta = theta_m.copy()
+    best_alpha = alpha_m.copy()
+    best_sigsq = sigsq_m.copy()
+    tm = 1
     normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m, B))
     for _ in range(reps):
         permut = list(np.random.permutation(range(N)))
         for n in permut:
-            y_phi, y_theta, y_alpha, y_sigsq = y_t_nest(phi, phi_m, theta,
-              theta_m, alpha, alpha_m, sigsq, sigsq_m, t)
+            t = 1/2*(1 + np.sqrt(1 + 4*tm**2))
+            
             data = np.array(traj_data[n])
             reward_est = lin_rew_func(y_theta, state_space, centers_x,
               centers_y)
@@ -571,11 +581,25 @@ def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             phi, theta, alpha, sigsq = GD(y_phi, y_theta, y_alpha, y_sigsq,
               g_phi, g_theta, g_alpha, g_sigsq, learn_rate)
             
+            mult = (tm - 1)/t
+            y_phi = phi + mult*(phi - phi_m)
+            y_theta = theta + mult*(theta - theta_m)
+            #y_alpha = alpha + mult*(alpha - alpha_m)
+            y_alpha = np.maximum(alpha + mult*(alpha - alpha_m), 0)
+            y_sigsq = sigsq + mult*(sigsq - sigsq_m)
+            
             learn_rate *= 0.99
-            t += 1
+            tm = t
+            
+            if logprobdiff > best:
+                best = logprobdiff
+                best_phi = y_phi.copy()
+                best_theta = y_theta.copy()
+                best_alpha = y_alpha.copy()
+                best_sigsq = y_sigsq.copy()
     if plot:
         plt.plot(elbos)
-    return theta, phi, alpha, sigsq
+    return best_theta, best_phi, best_alpha, best_sigsq
 
 
 def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
@@ -670,21 +694,31 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
 def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
          plot=True):
+    '''
+    Autoencoder with simulated annealing and Nesterov
+    '''
     impa = list(np.random.choice(action_space, M))
     elbos = []
     phi_m = np.zeros_like(phi)
     theta_m = np.zeros_like(theta)
     alpha_m = np.zeros_like(alpha)
     sigsq_m = np.zeros_like(sigsq)
+    y_phi = phi.copy()
+    y_theta = theta.copy()
+    y_alpha = alpha.copy()
+    y_sigsq = sigsq.copy()
     best = -np.inf
     best_phi = phi_m.copy()
     best_theta = theta_m.copy()
     best_alpha = alpha_m.copy()
     best_sigsq = sigsq_m.copy()
     time_since_best = 0
-    t = 1
+    tm = 1
     start_lr = learn_rate
     normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m, B))
+    
+    # FINISH
+    
     for _ in range(reps):
         permut = list(np.random.permutation(range(N)))
         for n in permut:
@@ -805,117 +839,10 @@ def y_t_nest_unif(theta, theta_m, beta, beta_m, t):
             beta - const*(beta - beta_m))
 
 
-def logZ_det(beta, impa, reward_est, data, M, TP, R_all, E_all, state_space,
-             action_space, m, Ti, centers_x, centers_y):
-    '''
-    Importance sampling approximation of logZ
-    and grad logZ
-    '''
-    R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
-                      imp_samp_data(data, impa, j, m, Ti).astype(int),
-                      TP, state_space) for j in range(M)]), 0, 1)
-    lst = []
-    for j in range(M):
-        newdata = imp_samp_data(data, impa, j, m, Ti).astype(int)
-        feat_expect = grad_lin_rew(newdata, state_space, centers_x, centers_y)
-        lst.append(feat_expect)
-    gradR_Z = np.swapaxes(np.array(lst), 0, 1)
-    
-    expo = np.exp(beta[:,None,:]*R_Z)
-    lvec = np.log(len(action_space)*np.mean(expo,axis=1)) # for all times
-    logZvec = lvec.sum(axis=1)
-
-    num_t = expo[:,:,None,:]*beta[:,None,None,:]*gradR_Z
-    num_a = np.einsum('ijk,ilk->ilk', expo*R_Z, E_all) #expo*R_Z
-    numsum_t = num_t.sum(axis=1)
-    den = expo.sum(axis=1)
-    gZ_theta = ((numsum_t/den[:,None,:]).sum(axis=2)).sum(axis=0)
-    gZ_alpha = (num_a/den[:,None,:]).sum(axis=2)
-    return logZvec, gZ_theta, gZ_alpha
-
-
-def alpha_grad_det(gZ_alpha, R_all, E_all):
-    return -gZ_alpha + np.einsum('ijk,ik->ij', E_all, R_all)
-
-
-def theta_grad_det(data, beta, state_space, gZ_theta, centers_x, centers_y):
-    gradR = grad_lin_rew(data, state_space, centers_x, centers_y) # m x d x Ti 
-    return -gZ_theta + np.einsum('ij,ikj->k', beta, gradR)
-
-
-def loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec):
-    logT = np.log(1/len(state_space)) + np.sum(np.log(traj_TP(data, TP, Ti, m)), axis=1)
-    return -logZvec + logT + np.einsum('ij,ij->i', beta, R_all)
-
-
-def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
-         plot=True):
-    impa = list(np.random.choice(action_space, M))
-    lik = []
-    theta_m = np.zeros_like(theta)
-    alpha_m = np.zeros_like(alpha)
-    y_theta = theta.copy()
-    y_alpha = alpha.copy()
-    best = -np.inf
-    best_theta = theta_m.copy()
-    best_alpha = alpha_m.copy()
-    tm = 1
-    last_lik = -np.inf
-    for _ in range(reps):
-        permut = list(np.random.permutation(range(N)))
-        for n in permut:
-            t = 1/2*(1 + np.sqrt(1 + 4*tm**2))
-            
-            data = np.array(traj_data[n]) # m x 2 x Ti
-            reward_est = lin_rew_func(y_theta, state_space, centers_x,
-              centers_y)
-            R_all, E_all = RE_all(reward_est, data, TP, state_space, m, centers_x, centers_y)
-            beta = np.einsum('ij,ijk->ik', y_alpha, E_all)
-            
-            logZvec, gZ_theta, gZ_alpha = logZ_det(beta,
-              impa, reward_est, data, M, TP, R_all, E_all, state_space,
-              action_space, m, Ti, centers_x, centers_y)
-          
-            loglikelihood = loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec).sum()
-            # appears not to be maximized at true theta/alpha, why?
-            lik.append(loglikelihood)
-              
-            g_theta = theta_grad_det(data, beta, state_space, gZ_theta, centers_x, centers_y)
-            g_alpha = alpha_grad_det(gZ_alpha, R_all, E_all)
-            
-            g_theta = g_theta / np.linalg.norm(g_theta)
-            g_alpha = g_alpha / np.linalg.norm(g_alpha, 'f')
-          
-            theta_m, alpha_m, = theta, alpha
-            theta = y_theta + learn_rate*g_theta
-            alpha = y_alpha + learn_rate*g_alpha
-            
-            mult = (tm - 1)/t
-            y_theta = theta + mult*(theta - theta_m)
-            y_alpha = np.maximum(alpha + mult*(alpha - alpha_m), 0)
-            
-            learn_rate *= 0.99
-            tm = t
-            
-            if loglikelihood > best:
-                best = loglikelihood
-                best_theta = y_theta.copy()
-                best_alpha = y_alpha.copy()
-            elif loglikelihood < last_lik:
-                y_theta = theta.copy()
-                y_alpha = alpha.copy()
-                tm = 1
-                
-            last_lik = loglikelihood
-    if plot:
-        plt.plot(lik)
-    return best_theta, best_alpha
-
-
 def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
          plot=True):
+    '''
     impa = list(np.random.choice(action_space, M))
     theta_m = np.zeros_like(theta)
     beta_m = np.zeros_like(beta)
@@ -945,6 +872,180 @@ def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             learn_rate *= 0.99
             t += 1
     return theta, beta
+    '''
+    impa = list(np.random.choice(action_space, M))
+    lik = []
+    theta_m = np.zeros_like(theta)
+    beta_m = np.zeros_like(beta)
+    y_theta = theta.copy()
+    y_beta = beta.copy()
+    best = -np.inf
+    best_theta = theta_m.copy()
+    best_beta = beta_m.copy()
+    tm = 1
+    last_lik = -np.inf
+    for _ in range(reps):
+        permut = list(np.random.permutation(range(N)))
+        for n in permut:
+            t = 1/2*(1 + np.sqrt(1 + 4*tm**2))
+            
+            data = np.array(traj_data[n])
+            reward_est = lin_rew_func(y_theta, state_space, centers_x,
+              centers_y)
+            R_all = RE_all(reward_est, data, TP, state_space, m,
+              centers_x, centers_y)[0]     
+            logZvec, gZ_theta, gZ_beta = logZ_unif(y_beta, impa, reward_est,
+              data, M, TP, state_space, action_space, m, Ti, centers_x,
+              centers_y)
+          
+            loglikelihood = loglik(state_space, Ti, y_beta, data, TP, m, R_all,
+              logZvec, unif=True).sum()
+            lik.append(loglikelihood)
+              
+            g_theta = theta_grad_unif(data, y_beta, state_space, gZ_theta,
+              centers_x, centers_y)
+            g_beta = beta_grad_unif(gZ_beta, R_all)
+            
+            g_theta = g_theta / np.linalg.norm(g_theta)
+            g_beta = g_beta / np.linalg.norm(g_beta)
+          
+            theta_m, beta_m, = theta, beta
+            theta = y_theta + learn_rate*g_theta
+            beta = y_beta + learn_rate*g_beta
+            
+            mult = (tm - 1)/t
+            y_theta = theta + mult*(theta - theta_m)
+            y_beta = np.maximum(beta + mult*(beta - beta_m), 0)
+            
+            learn_rate *= 0.99
+            tm = t
+            
+            if loglikelihood > best:
+                best = loglikelihood
+                best_theta = y_theta.copy()
+                best_beta = y_beta.copy()
+            elif loglikelihood < last_lik:
+                y_theta = theta.copy()
+                y_beta = beta.copy()
+                tm = 1
+                
+            last_lik = loglikelihood
+    if plot:
+        plt.plot(lik)
+    return best_theta, best_beta
+
+
+################### Deterministic state-varying beta model ###################
+
+def alpha_grad_det(gZ_alpha, R_all, E_all):
+    return -gZ_alpha + np.einsum('ijk,ik->ij', E_all, R_all)
+
+
+def theta_grad_det(data, beta, state_space, gZ_theta, centers_x, centers_y):
+    gradR = grad_lin_rew(data, state_space, centers_x, centers_y)
+    return -gZ_theta + np.einsum('ij,ikj->k', beta, gradR)
+
+
+def logZ_det(beta, impa, reward_est, data, M, TP, R_all, E_all, state_space,
+             action_space, m, Ti, centers_x, centers_y):
+    R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
+                      imp_samp_data(data, impa, j, m, Ti).astype(int),
+                      TP, state_space) for j in range(M)]), 0, 1)
+    lst = []
+    for j in range(M):
+        newdata = imp_samp_data(data, impa, j, m, Ti).astype(int)
+        feat_expect = grad_lin_rew(newdata, state_space, centers_x, centers_y)
+        lst.append(feat_expect)
+    gradR_Z = np.swapaxes(np.array(lst), 0, 1)
+    
+    expo = np.exp(beta[:,None,:]*R_Z)
+    lvec = np.log(len(action_space)*np.mean(expo,axis=1))
+    logZvec = lvec.sum(axis=1)
+
+    num_t = expo[:,:,None,:]*beta[:,None,None,:]*gradR_Z
+    num_a = np.einsum('ijk,ilk->ilk', expo*R_Z, E_all)
+    numsum_t = num_t.sum(axis=1)
+    den = expo.sum(axis=1)
+    gZ_theta = ((numsum_t/den[:,None,:]).sum(axis=2)).sum(axis=0)
+    gZ_alpha = (num_a/den[:,None,:]).sum(axis=2)
+    return logZvec, gZ_theta, gZ_alpha
+
+
+def loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec, unif=False):
+    logT = np.log(1/len(state_space)) + np.sum(np.log(traj_TP(data, TP, Ti,
+      m)), axis=1)
+    if unif:
+        return -logZvec + logT + beta*R_all.sum(axis=1)
+    else:
+        return -logZvec + logT + np.einsum('ij,ij->i', beta, R_all)
+
+
+def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
+         plot=True):
+    impa = list(np.random.choice(action_space, M))
+    lik = []
+    theta_m = np.zeros_like(theta)
+    alpha_m = np.zeros_like(alpha)
+    y_theta = theta.copy()
+    y_alpha = alpha.copy()
+    best = -np.inf
+    best_theta = theta_m.copy()
+    best_alpha = alpha_m.copy()
+    tm = 1
+    last_lik = -np.inf
+    for _ in range(reps):
+        permut = list(np.random.permutation(range(N)))
+        for n in permut:
+            t = 1/2*(1 + np.sqrt(1 + 4*tm**2))
+            
+            data = np.array(traj_data[n])
+            reward_est = lin_rew_func(y_theta, state_space, centers_x,
+              centers_y)
+            R_all, E_all = RE_all(reward_est, data, TP, state_space, m,
+              centers_x, centers_y)
+            beta = np.einsum('ij,ijk->ik', y_alpha, E_all)
+            
+            logZvec, gZ_theta, gZ_alpha = logZ_det(beta,
+              impa, reward_est, data, M, TP, R_all, E_all, state_space,
+              action_space, m, Ti, centers_x, centers_y)
+          
+            loglikelihood = loglik(state_space, Ti, beta, data, TP, m, R_all,
+              logZvec).sum()
+            # appears not to be maximized at true theta/alpha, why?
+            lik.append(loglikelihood)
+              
+            g_theta = theta_grad_det(data, beta, state_space, gZ_theta,
+              centers_x, centers_y)
+            g_alpha = alpha_grad_det(gZ_alpha, R_all, E_all)
+            
+            g_theta = g_theta / np.linalg.norm(g_theta)
+            g_alpha = g_alpha / np.linalg.norm(g_alpha, 'f')
+          
+            theta_m, alpha_m, = theta, alpha
+            theta = y_theta + learn_rate*g_theta
+            alpha = y_alpha + learn_rate*g_alpha
+            
+            mult = (tm - 1)/t
+            y_theta = theta + mult*(theta - theta_m)
+            y_alpha = np.maximum(alpha + mult*(alpha - alpha_m), 0)
+            
+            learn_rate *= 0.99
+            tm = t
+            
+            if loglikelihood > best:
+                best = loglikelihood
+                best_theta = y_theta.copy()
+                best_alpha = y_alpha.copy()
+            elif loglikelihood < last_lik:
+                y_theta = theta.copy()
+                y_alpha = alpha.copy()
+                tm = 1
+                
+            last_lik = loglikelihood
+    if plot:
+        plt.plot(lik)
+    return best_theta, best_alpha
 
 
 def random_algo(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
@@ -1010,11 +1111,28 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     if save:
         plt.savefig(save[0] + '___' + save[1] + '.png')
         plt.show()
-    return true_total, totals[0], totals[1], np.sd(totals[0]), np.sd(totals[1])
+    return true_total, totals[0], totals[1], np.std(totals[0]), np.std(totals[1])
 
 
 seeds_1 = [20,40,60,80,100]
 seeds_2 = [120,140,160,180,200]
+
+hyparams = {'D': 16,
+            'MOVE_NOISE': 0.05,
+            'INTERCEPT_ETA': 0,
+            'WEIGHT': 2,
+            'RESET': 20,
+            'COEF': 0.1,
+            'ETA_COEF': 0.01,
+            'GAM': 0.9,
+            'M': 20,
+            'N': 100,
+            'J': 20,
+            'T': 50,
+            'Ti': 20,
+            'B': 50,
+            'INTERCEPT_REW': -1,
+            }
 
 def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
                  test_data='myo', seeds=seeds_1):
@@ -1027,7 +1145,6 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
     MOVE_NOISE = 0.05
     INTERCEPT_ETA = 0
     WEIGHT = 2
-    RESCALE = np.array([1,-1] * ((d-1) // 2))
     RESET = 20
     COEF = 0.1
     ETA_COEF = 0.01 #0.05 #0.1 #1
@@ -1132,7 +1249,6 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
         f.write('INTERCEPT_ETA = ' + str(INTERCEPT_ETA) + '\n')
         f.write('INTERCEPT_REW = ' + str(INTERCEPT_REW) + '\n')
         f.write('WEIGHT = ' + str(WEIGHT) + '\n')
-        f.write('RESCALE = ' + str(RESCALE) + '\n')
         f.write('RESET = ' + str(RESET) + '\n')
         f.write('COEF = ' + str(COEF) + '\n')
         f.write('GAM = ' + str(GAM) + '\n')
@@ -1165,6 +1281,9 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
         f.write('mean algo_b_tot = ' + str(np.mean(b_tot)) + '\n')
         f.write('sd algo_b_tot = ' + str(b_sd) + '\n')
         f.close()
+        
+
+def results_varying_hyper():
     
 #%%
 
@@ -1222,6 +1341,8 @@ theta_star_p, alpha_star_p = MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_
 theta_star_AR, phi_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha,
   sigsq, phi, beta, traj_data, TP, state_space, action_space, B, m, M, Ti, N,
   learn_rate, reps, centers_x, centers_y)
+theta_star_u, beta_star_u = MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
+         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
 '''
 Testing AR. Seems to consistently find a certain solution, but that solution is
 very wrong...
@@ -1234,16 +1355,9 @@ work!
 much, but varying theta does a lot
 
 
-
-
-
-
-
 sigsq of 0.5 --> unif does terrible on non-sparse, hallucinates high reward
 in a corner consistently...
 '''
-theta_star_u, beta_star_u = MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
 # these all seem to do terribly on seed 10, except when sigsq is 0.01 rather than 2 -
 # then MEIRL_det_pos works quite well 
 
@@ -1261,17 +1375,11 @@ theta_star_u, beta_star_u = MEIRL_unif(theta, alpha, sigsq, phi, beta, boltz_dat
 
 # see_trajectory(rewards, np.array(traj_data[0])[0,0])
 
-# this works p well, when true sigsq is set to 2 and the trajectories come
-# from the truly specified model
 dumb_data = make_data(alpha_star_2, sigsq_star_2, lin_rew_func(theta_star_2,
                             state_space, centers_x, centers_y), N, Ti, state_space, action_space,
                             TP, m)
 
 #sns.heatmap(lin_rew_func(theta_true, state_space, centers_x, centers_y))
-
-'''
-Testing against constant-beta model
-'''
 
 theta_s, beta_s = MEIRL_unif(theta, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, 1, GD_unif, centers_x, centers_y)
@@ -1387,6 +1495,7 @@ To do:
      * count of states where myo best and opt best differ
      * look at learning process of meirl-unif on seed 160, boltz data, in detail, how does
      it work so well?
+     * make all nesterovs consistent
      
 QUALITATIVE NOTES:
     * Good performance is basically elusive in large D MDPs when beta is allowed
@@ -1422,7 +1531,7 @@ DEFAULTS FOR PARAMS:
     MOVE_NOISE = 0.05
     INTERCEPT_ETA = 0
     WEIGHT = 2
-    RESCALE = 1
+    RESCALE = 1   <---- getting rid of this, just alternating signs
     RESET = 20
     COEF = 0.1
     ETA_COEF = 0.01
@@ -1475,10 +1584,12 @@ Added gradient clipping to all algos for >= 23!
                   
                   
 ### 100s are results using thetas drawn from uniform, apparently no longer
-have issue where unif does better than random when trained on random data
- * after that point,     RESCALE = np.array([1,-1] * ((d-1) // 2))
+### have issue where unif does better than random when trained on random data
+### * after that point,     RESCALE = np.array([1,-1] * ((d-1) // 2))
+### * Note that for these trials, the unif model uses different Nesterov than
+### others
 
-100) meirl_unif vs random  ;  INTERCEPT_REW = -1, sigsqs = 1.5
+100) meirl_unif vs random  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1
 101) meirl_det_pos vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1
 102) meirl_det_pos vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_2
 103) meirl_det_pos vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1; boltz
@@ -1488,6 +1599,8 @@ have issue where unif does better than random when trained on random data
 
 
 
+                             # AFTER MODIFYING UNIF TO USE FISTA #
+200) meirl_unif vs random  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1 
 
                   
     
