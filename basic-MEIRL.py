@@ -797,8 +797,8 @@ def theta_grad_unif(data, beta, state_space, gZ_theta, centers_x, centers_y):
 def logZ_unif(beta, impa, reward_est, data, M, TP, state_space, action_space,
               m, Ti, centers_x, centers_y):
     R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
-                      imp_samp_data(data, impa, j, m, Ti).astype(int),
-                      TP, state_space) for j in range(M)]), 0, 1)
+      imp_samp_data(data, impa, j, m, Ti).astype(int),
+      TP, state_space) for j in range(M)]), 0, 1)
     lst = []
     for j in range(M):
         newdata = imp_samp_data(data, impa, j, m, Ti).astype(int)
@@ -1024,10 +1024,11 @@ the feature expect too but they don't show this robustness.
 
 ####################### Functions for evaluation/testing ######################
 
-def cumulative_reward(s_list, cr_reps, policy, T, state_space, action_space, rewards):
+def cumulative_reward(s_list, cr_reps, policy, T, state_space, action_space,
+                      rewards):
     reward_list = []
     for i in range(cr_reps):
-        ret = episode(s_list[i], T, policy, rewards, action_space)[2] #true reward
+        ret = episode(s_list[i], T, policy, rewards, action_space)[2]
         reward_list.extend(ret)
     return reward_list
 
@@ -1552,7 +1553,6 @@ SEED 30: again, det and unif matching optimal; random theta def doesn't, so
 To do:
     * misspec of reward function?
     * misspec of beta mean?
-    * batch GD over trajectories?
     * more/longer trajectories? Could shorten the training traj to speed training
      but have longer test trajectories to see if long-term reward is improved
     * try different mu functions for the locally optimal experts; maybe
@@ -1570,6 +1570,7 @@ To do:
     * Try restricting beta to be positive - in principle, quite hard to
       distinguish a state with high positive reward being successfully pursued
       by most experts from a state with high neg reward being anti-optimized
+         --- done
     * Vary:
         - sample size -- see how many samples necessary to get good performance
             -- tentatively looks like N=100 each is sufficient for det to work,
@@ -1585,6 +1586,7 @@ To do:
      * Check action-value distribution vs next-step reward distribution, check
      that the reason robust to Boltz isn't just that those distributions are
      v similar
+         -- sort of done but need to organize this
      * compare diff sigsqs for different experts
      * test on MCMC...
      * vary seed used for everything *after* definition of the MDP
