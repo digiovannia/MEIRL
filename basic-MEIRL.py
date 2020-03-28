@@ -444,37 +444,37 @@ In the gradient functions that follow, mean over an axis is for the Monte
 Carlo estimate of the expectation with respect to multivariate standard normal.
 '''
 
-def phi_grad_ae(phi, m, Ti, normals, denom, sigsq, glogZ_phi):
+def phi_grad_ae(phi, m, Ti, normals, denom, sigsq, gZ_phi):
     x1 = (phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:]
     x2 = (denom**(1/2))[:,None,None]*normals
     x = x1 + x2
     y1 = 1/sigsq[:,None]*x.sum(axis=2)
     y2 = np.einsum('ijk,ijk->ij', normals, x)/((2*sigsq*denom**(1/2))[:,None])
-    result = -glogZ_phi - np.stack((y1, y2 - Ti/(2*denom)[:,None]))
+    result = -gZ_phi - np.stack((y1, y2 - Ti/(2*denom)[:,None]))
     return np.swapaxes(np.mean(result, axis=2), 0, 1)
 
 
-def alpha_grad_ae(glogZ_alpha, E_all, R_all):
-    result = -glogZ_alpha + np.einsum('ijk,ik->ij', E_all, R_all)[:,None,:]
+def alpha_grad_ae(gZ_alpha, E_all, R_all):
+    result = -gZ_alpha + np.einsum('ijk,ik->ij', E_all, R_all)[:,None,:]
     return np.mean(result, axis=1)
 
 
-def sigsq_grad_ae(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all, gvec):
+def sigsq_grad_ae(gZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all, gvec):
     q_grad = -Ti/(2*denom)
     x = -Ti/(2*sigsq) + np.einsum('ij,ij->i', R_all, R_all)
     y = np.einsum('ijk,ik->ij', normals, R_all)/(2*denom**(1/2))[:,None]
     z1 = R_all[:,None,:] + normals/(2*denom**(1/2))[:,None,None]
     z = 1/(sigsq[:,None])*np.einsum('ijk,ijk->ij', z1, gvec)
     w = 1/(2*sigsq**2)[:,None]*gnorm
-    result = -glogZ_sigsq + x[:,None] + y - z + w - q_grad[:,None]
+    result = -gZ_sigsq + x[:,None] + y - z + w - q_grad[:,None]
     return np.mean(result, axis=1)
 
 
-def theta_grad_ae(glogZ_theta, data, state_space, R_all, E_all, sigsq, alpha,
+def theta_grad_ae(gZ_theta, data, state_space, R_all, E_all, sigsq, alpha,
                centers_x, centers_y):
     gradR = grad_lin_rew(data, state_space, centers_x, centers_y)
     X = sigsq[:,None]*R_all + np.einsum('ij,ijk->ik', alpha, E_all)
-    result = -glogZ_theta + np.einsum('ijk,ik->ij', gradR, X)[:,None,:]
+    result = -gZ_theta + np.einsum('ijk,ik->ij', gradR, X)[:,None,:]
     return np.sum(np.mean(result, axis=1), axis=0)
 
 
@@ -507,28 +507,27 @@ def logZ(sigsq, normals, meanvec, denom, impa, reward_est, data, M, TP, R_all,
     expo = np.exp(bterm - np.max(bterm, axis=2)[:,:,None,:])
     num = expo[:,:,:,None,:]*(num1[:,None,:,:,:]+num2)
     den = expo.sum(axis=2)
-    glogZ_theta = (num.sum(axis=2)/den[:,:,None,:]).sum(axis=3)
+    gZ_theta = (num.sum(axis=2)/den[:,:,None,:]).sum(axis=3)
 
     num_a = expo[:,:,:,None,:]*np.einsum('ijk,ilk->ijlk', R_Z,
       E_all)[:,None,:,:,:]
-    glogZ_alpha = (num_a.sum(axis=2)/den[:,:,None,:]).sum(axis=3)
+    gZ_alpha = (num_a.sum(axis=2)/den[:,:,None,:]).sum(axis=3)
 
     normterm = normals/((2*denom**2)[:,None,None])
     num_s = expo*np.einsum('ijk,ilk->iljk', R_Z, R_all[:,None,:] + normterm)
-    glogZ_sigsq = (num_s.sum(axis=2)/den).sum(axis=2)
+    gZ_sigsq = (num_s.sum(axis=2)/den).sum(axis=2)
 
     num_p1 = expo*R_Z[:,None,:,:]
     num_p2 = expo*np.einsum('ijk,ilk->iljk', R_Z, normterm)
-    glogZ_phi = np.array([(num_p1.sum(axis=2)/den).sum(axis=2),
+    gZ_phi = np.array([(num_p1.sum(axis=2)/den).sum(axis=2),
       (num_p2.sum(axis=2)/den).sum(axis=2)])
-    return logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi
+    return logZvec, gZ_theta, gZ_alpha, gZ_sigsq, gZ_phi
 
 
 def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
+         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
          plot=True):
     impa = list(np.random.choice(action_space, M))
-    N = len(traj_data)
     elbos = []
     phi_m = np.zeros_like(phi)
     theta_m = np.zeros_like(theta)
@@ -548,25 +547,29 @@ def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
               centers_x, centers_y)
             meanvec, denom, gvec, gnorm = grad_terms(normals,
               y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
-            logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ(y_sigsq,
-                                                                             normals,
-              meanvec, denom, impa, reward_est, data, M, TP, R_all, E_all, action_space,
-              centers_x, centers_y, state_space, m, Ti)
+            logZvec, gZ_theta, gZ_alpha, gZ_sigsq, gZ_phi = logZ(y_sigsq,
+              normals, meanvec, denom, impa, reward_est, data, M, TP, R_all,
+              E_all, action_space, centers_x, centers_y, state_space, m, Ti)
           
-            logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
-              logZvec, meanvec, denom)
+            logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m,
+              normals, R_all, logZvec, meanvec, denom)
             elbos.append(logprobdiff)
               
-            g_phi = phi_grad_ae(y_phi, m, Ti, normals, denom, y_sigsq, glogZ_phi)
-            g_theta = theta_grad_ae(glogZ_theta, data, state_space, R_all, E_all,
+            g_phi = phi_grad_ae(y_phi, m, Ti, normals, denom, y_sigsq, gZ_phi)
+            g_theta = theta_grad_ae(gZ_theta, data, state_space, R_all, E_all,
               y_sigsq, y_alpha, centers_x, centers_y)
-            g_alpha = alpha_grad_ae(glogZ_alpha, E_all, R_all)
-            g_sigsq = sigsq_grad_ae(glogZ_sigsq, normals, Ti, y_sigsq, gnorm, denom,
-              R_all, gvec)
+            g_alpha = alpha_grad_ae(gZ_alpha, E_all, R_all)
+            g_sigsq = sigsq_grad_ae(gZ_sigsq, normals, Ti, y_sigsq, gnorm,
+              denom, R_all, gvec)
+            
+            g_phi = g_phi / np.linalg.norm(g_phi)
+            g_theta = g_theta / np.linalg.norm(g_theta)
+            g_alpha = g_alpha / np.linalg.norm(g_alpha, 'f')
+            g_sigsq = g_sigsq / np.linalg.norm(g_sigsq)
           
             phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
-            phi, theta, alpha, sigsq = GD(y_phi, y_theta, y_alpha, y_sigsq, g_phi,
-              g_theta, g_alpha, g_sigsq, learn_rate)
+            phi, theta, alpha, sigsq = GD(y_phi, y_theta, y_alpha, y_sigsq,
+              g_phi, g_theta, g_alpha, g_sigsq, learn_rate)
             
             learn_rate *= 0.99
             t += 1
@@ -576,10 +579,12 @@ def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
 
 
 def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
+         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
          plot=True):
+    '''
+    Autoencoder algorithm with adaptive restart and Nesterov acceleration
+    '''
     impa = list(np.random.choice(action_space, M))
-    N = len(traj_data)
     elbos = []
     phi_m = np.zeros_like(phi)
     theta_m = np.zeros_like(theta)
@@ -599,16 +604,16 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m, B))
     for _ in range(reps):
         permut = list(np.random.permutation(range(N)))
-        for n in permut:#permut[20:30]:
+        for n in permut:
             t = 1/2*(1 + np.sqrt(1 + 4*tm**2))
             
-            data = np.array(traj_data[n]) # m x 2 x Ti
+            data = np.array(traj_data[n])
             reward_est = lin_rew_func(y_theta, state_space, centers_x,
               centers_y)
             R_all, E_all = RE_all(reward_est, data, TP, state_space, m, centers_x, centers_y)
             meanvec, denom, gvec, gnorm = grad_terms(normals,
               y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
-            logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ(y_sigsq,
+            logZvec, gZ_theta, gZ_alpha, gZ_sigsq, gZ_phi = logZ(y_sigsq,
                                                                              normals,
               meanvec, denom, impa, reward_est, data, M, TP, R_all, E_all, action_space,
               centers_x, centers_y, state_space, m, Ti)
@@ -617,11 +622,11 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
               logZvec, meanvec, denom)
             elbos.append(logprobdiff)
               
-            g_phi = phi_grad_ae(y_phi, m, Ti, normals, denom, y_sigsq, glogZ_phi)
-            g_theta = theta_grad_ae(glogZ_theta, data, state_space, R_all, E_all,
+            g_phi = phi_grad_ae(y_phi, m, Ti, normals, denom, y_sigsq, gZ_phi)
+            g_theta = theta_grad_ae(gZ_theta, data, state_space, R_all, E_all,
               y_sigsq, y_alpha, centers_x, centers_y)
-            g_alpha = alpha_grad_ae(glogZ_alpha, E_all, R_all)
-            g_sigsq = sigsq_grad_ae(glogZ_sigsq, normals, Ti, y_sigsq, gnorm, denom,
+            g_alpha = alpha_grad_ae(gZ_alpha, E_all, R_all)
+            g_sigsq = sigsq_grad_ae(gZ_sigsq, normals, Ti, y_sigsq, gnorm, denom,
               R_all, gvec)
             
             g_phi = g_phi / np.linalg.norm(g_phi)
@@ -663,10 +668,9 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
 
 
 def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
+         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
          plot=True):
     impa = list(np.random.choice(action_space, M))
-    N = len(traj_data)
     elbos = []
     phi_m = np.zeros_like(phi)
     theta_m = np.zeros_like(theta)
@@ -693,8 +697,8 @@ def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             R_all, E_all = RE_all(reward_est, data, TP, state_space, m, centers_x, centers_y)
             meanvec, denom, gvec, gnorm = grad_terms(normals,
               y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
-            (logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq,
-              glogZ_phi) = logZ(y_sigsq, normals, meanvec, denom, impa, reward_est,
+            (logZvec, gZ_theta, gZ_alpha, gZ_sigsq,
+              gZ_phi) = logZ(y_sigsq, normals, meanvec, denom, impa, reward_est,
               data, M, TP, R_all, E_all, action_space, centers_x, centers_y,
               state_space, m, Ti)
           
@@ -704,11 +708,11 @@ def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             #print(lp - lq)
               
             g_phi = phi_grad_ae(y_phi, m, Ti, normals, denom, y_sigsq,
-              glogZ_phi)
-            g_theta = theta_grad_ae(glogZ_theta, data, state_space,
+              gZ_phi)
+            g_theta = theta_grad_ae(gZ_theta, data, state_space,
               R_all, E_all, y_sigsq, y_alpha, centers_x, centers_y)
-            g_alpha = alpha_grad_ae(glogZ_alpha, E_all, R_all)
-            g_sigsq = sigsq_grad_ae(glogZ_sigsq, normals, Ti, y_sigsq,
+            g_alpha = alpha_grad_ae(gZ_alpha, E_all, R_all)
+            g_sigsq = sigsq_grad_ae(gZ_sigsq, normals, Ti, y_sigsq,
               gnorm, denom, R_all, gvec)
             
             g_phi = g_phi / np.linalg.norm(g_phi)
@@ -754,13 +758,13 @@ def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
 
 ############################ Uniform beta model ##############################
 
-def beta_grad_unif(glogZ_beta, R_all):
-    return -glogZ_beta + R_all.sum(axis=1)
+def beta_grad_unif(gZ_beta, R_all):
+    return -gZ_beta + R_all.sum(axis=1)
 
 
-def theta_grad_unif(data, beta, state_space, glogZ_theta, centers_x, centers_y):
+def theta_grad_unif(data, beta, state_space, gZ_theta, centers_x, centers_y):
     gradR = grad_lin_rew(data, state_space, centers_x, centers_y)
-    return -glogZ_theta + (beta[:,None,None]*gradR).sum(axis=2).sum(axis=0)
+    return -gZ_theta + (beta[:,None,None]*gradR).sum(axis=2).sum(axis=0)
 
 
 def logZ_unif(beta, impa, reward_est, data, M, TP, state_space, action_space,
@@ -784,9 +788,9 @@ def logZ_unif(beta, impa, reward_est, data, M, TP, state_space, action_space,
     numsum_t = num_t.sum(axis=1)
     numsum_b = num_b.sum(axis=1)
     den = expo.sum(axis=1)
-    glogZ_theta = ((numsum_t/den[:,None,:]).sum(axis=2)).sum(axis=0)
-    glogZ_beta = (numsum_b/den).sum(axis=1)
-    return logZvec, glogZ_theta, glogZ_beta
+    gZ_theta = ((numsum_t/den[:,None,:]).sum(axis=2)).sum(axis=0)
+    gZ_beta = (numsum_b/den).sum(axis=1)
+    return logZvec, gZ_theta, gZ_beta
 
 
 def GD_unif(theta, beta, g_theta, g_beta, learn_rate):
@@ -825,18 +829,18 @@ def logZ_det(beta, impa, reward_est, data, M, TP, R_all, E_all, state_space,
     num_a = np.einsum('ijk,ilk->ilk', expo*R_Z, E_all) #expo*R_Z
     numsum_t = num_t.sum(axis=1)
     den = expo.sum(axis=1)
-    glogZ_theta = ((numsum_t/den[:,None,:]).sum(axis=2)).sum(axis=0)
-    glogZ_alpha = (num_a/den[:,None,:]).sum(axis=2)
-    return logZvec, glogZ_theta, glogZ_alpha
+    gZ_theta = ((numsum_t/den[:,None,:]).sum(axis=2)).sum(axis=0)
+    gZ_alpha = (num_a/den[:,None,:]).sum(axis=2)
+    return logZvec, gZ_theta, gZ_alpha
 
 
-def alpha_grad_det(glogZ_alpha, R_all, E_all):
-    return -glogZ_alpha + np.einsum('ijk,ik->ij', E_all, R_all)
+def alpha_grad_det(gZ_alpha, R_all, E_all):
+    return -gZ_alpha + np.einsum('ijk,ik->ij', E_all, R_all)
 
 
-def theta_grad_det(data, beta, state_space, glogZ_theta, centers_x, centers_y):
+def theta_grad_det(data, beta, state_space, gZ_theta, centers_x, centers_y):
     gradR = grad_lin_rew(data, state_space, centers_x, centers_y) # m x d x Ti 
-    return -glogZ_theta + np.einsum('ij,ikj->k', beta, gradR)
+    return -gZ_theta + np.einsum('ij,ikj->k', beta, gradR)
 
 
 def loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec):
@@ -845,10 +849,9 @@ def loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec):
 
 
 def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
+         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
          plot=True):
     impa = list(np.random.choice(action_space, M))
-    N = len(traj_data)
     lik = []
     theta_m = np.zeros_like(theta)
     alpha_m = np.zeros_like(alpha)
@@ -870,7 +873,7 @@ def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             R_all, E_all = RE_all(reward_est, data, TP, state_space, m, centers_x, centers_y)
             beta = np.einsum('ij,ijk->ik', y_alpha, E_all)
             
-            logZvec, glogZ_theta, glogZ_alpha = logZ_det(beta,
+            logZvec, gZ_theta, gZ_alpha = logZ_det(beta,
               impa, reward_est, data, M, TP, R_all, E_all, state_space,
               action_space, m, Ti, centers_x, centers_y)
           
@@ -878,8 +881,8 @@ def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             # appears not to be maximized at true theta/alpha, why?
             lik.append(loglikelihood)
               
-            g_theta = theta_grad_det(data, beta, state_space, glogZ_theta, centers_x, centers_y)
-            g_alpha = alpha_grad_det(glogZ_alpha, R_all, E_all)
+            g_theta = theta_grad_det(data, beta, state_space, gZ_theta, centers_x, centers_y)
+            g_alpha = alpha_grad_det(gZ_alpha, R_all, E_all)
             
             g_theta = g_theta / np.linalg.norm(g_theta)
             g_alpha = g_alpha / np.linalg.norm(g_alpha, 'f')
@@ -911,14 +914,9 @@ def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
 
 
 def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
+         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
          plot=True):
-    '''
-    y_t is the function used to define modified iterate for Nesterov, if
-    applicable
-    '''
     impa = list(np.random.choice(action_space, M))
-    N = len(traj_data)
     theta_m = np.zeros_like(theta)
     beta_m = np.zeros_like(beta)
     t = 1
@@ -931,11 +929,11 @@ def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             reward_est = lin_rew_func(y_theta, state_space, centers_x,
               centers_y)
             R_all = RE_all(reward_est, data, TP, state_space, m, centers_x, centers_y)[0]
-            logZvec, glogZ_theta, glogZ_beta = logZ_unif(y_beta, impa,
+            logZvec, gZ_theta, gZ_beta = logZ_unif(y_beta, impa,
               reward_est, data, M, TP, state_space, action_space, m, Ti, centers_x, centers_y)
               
-            g_theta = theta_grad_unif(data, y_beta, state_space, glogZ_theta, centers_x, centers_y)
-            g_beta = beta_grad_unif(glogZ_beta, R_all)
+            g_theta = theta_grad_unif(data, y_beta, state_space, gZ_theta, centers_x, centers_y)
+            g_beta = beta_grad_unif(gZ_beta, R_all)
             
             g_theta = g_theta / np.linalg.norm(g_theta)
             g_beta = g_beta / np.linalg.norm(g_beta)
@@ -950,7 +948,7 @@ def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
 
 
 def random_algo(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
+         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
          plot=True):
     return (np.random.normal(size=theta.shape), 0)
 
@@ -976,7 +974,7 @@ def cumulative_reward(s_list, cr_reps, policy, T, state_space, action_space, rew
 
 
 def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-                     action_space, B, m, M, Ti, learn_rate, reps, policy, T,
+                     action_space, B, m, M, Ti, N, learn_rate, reps, policy, T,
                      rewards, init_policy, init_Q, J, centers_x, centers_y,
                      cr_reps, algo_a, algo_b, random=False, save=False):
     start = datetime.datetime.now()
@@ -989,13 +987,13 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     cols = ['r', 'g']
     for j in range(J):
         ta = algo_a(theta, alpha, sigsq, phi, beta, traj_data, TP,
-          state_space, action_space, B, m, M, Ti, learn_rate, reps, centers_x,
+          state_space, action_space, B, m, M, Ti, N, learn_rate, reps, centers_x,
           centers_y, plot=False)[0]
         if random:
             tb = np.random.normal(size=theta.shape)
         else:
             tb = algo_b(theta, alpha, sigsq, phi, beta,
-              traj_data, TP, state_space, action_space, B, m, M, Ti, learn_rate,
+              traj_data, TP, state_space, action_space, B, m, M, Ti, N, learn_rate,
               reps, centers_x, centers_y, plot=False)[0]
         theta_stars = [ta, tb]
         for i in range(2):
@@ -1113,7 +1111,7 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
             true_tot, a_tot, b_tot, a_sd, b_sd = evaluate_general(theta, alpha, sigsq, phi, beta, 
                                                          traj_data,
               TP, state_space,
-              action_space, B, m, M, Ti, learn_rate, reps, opt_policy, T,
+              action_space, B, m, M, Ti, N, learn_rate, reps, opt_policy, T,
               rewards, init_policy, init_Q, J, centers_x, centers_y,
               cr_reps, algo_a, algo_b, random=random,
               save=['results/' + fname + '/' + fname,
@@ -1122,7 +1120,7 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
             true_tot, a_tot, b_tot, a_sd, b_sd = evaluate_general(theta, alpha, sigsq, phi, beta,
                                                           boltz_data,
               TP, state_space,
-              action_space, B, m, M, Ti, learn_rate, reps, opt_policy, T,
+              action_space, B, m, M, Ti, N, learn_rate, reps, opt_policy, T,
               rewards, init_policy, init_Q, J, centers_x, centers_y,
               cr_reps, algo_a, algo_b, random=random,
               save=['results/' + fname + '/' + fname,
@@ -1216,13 +1214,13 @@ ETA_COEF = 0.01, J=20, sigsq=0.4, reps=5, AR vs unif:
 
 #regular
 theta_star, phi_star, alpha_star, sigsq_star = ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y)
+         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
 theta_star_2, phi_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y)
+         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
 theta_star_p, alpha_star_p = MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y)
+         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
 theta_star_AR, phi_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha,
-  sigsq, phi, beta, traj_data, TP, state_space, action_space, B, m, M, Ti,
+  sigsq, phi, beta, traj_data, TP, state_space, action_space, B, m, M, Ti, N,
   learn_rate, reps, centers_x, centers_y)
 '''
 Testing AR. Seems to consistently find a certain solution, but that solution is
@@ -1245,21 +1243,21 @@ sigsq of 0.5 --> unif does terrible on non-sparse, hallucinates high reward
 in a corner consistently...
 '''
 theta_star_u, beta_star_u = MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y)
+         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
 # these all seem to do terribly on seed 10, except when sigsq is 0.01 rather than 2 -
 # then MEIRL_det_pos works quite well 
 
 #boltz - FIX THIS
 phi_star_b, theta_star_b, alpha_star_b, sigsq_star_b = ann_AEVB(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y)
+         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
 phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y)
+         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
 theta_star_p, alpha_star_p = MEIRL_det_pos(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y)
+         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
 phi_star_AR, theta_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y)
+         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
 theta_star_u, beta_star_u = MEIRL_unif(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y)
+         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
 
 # see_trajectory(rewards, np.array(traj_data[0])[0,0])
 
@@ -1276,20 +1274,20 @@ Testing against constant-beta model
 '''
 
 theta_s, beta_s = MEIRL_unif(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, learn_rate, 1, GD_unif, centers_x, centers_y)
+         action_space, B, m, M, Ti, N, learn_rate, 1, GD_unif, centers_x, centers_y)
 
 true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y, cr_reps)
+                        init_Q, J, B, m, M, Ti, N, learn_rate, traj_data, centers_x, centers_y, cr_reps)
 # Using AR_AEVB as the inner loop, this works p well on D=8
 
 true_tot, AEVB_tot, det_tot = evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y, cr_reps)
+                        init_Q, J, B, m, M, Ti, N, learn_rate, traj_data, centers_x, centers_y, cr_reps)
 
 true_tot, det_tot_p, unif_tot_p = evaluate_det_vs_unif(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, T,
                         state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, learn_rate, traj_data,
+                        init_Q, J, B, m, M, Ti, N, learn_rate, traj_data,
                         centers_x, centers_y, cr_reps)
 
 '''
@@ -1313,7 +1311,7 @@ SEED 30: again, det and unif matching optimal; random theta def doesn't, so
 
 true_tot_b, AEVB_tot_b, unif_tot_b = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
                         state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, learn_rate, boltz_data, centers_x, centers_y, cr_reps)
+                        init_Q, J, B, m, M, Ti, N, learn_rate, boltz_data, centers_x, centers_y, cr_reps)
 # Works robustly well! This is on data where the demonstrators are Q-softmaxing,
 # not next-step reward!
 
@@ -1343,7 +1341,7 @@ true_tot_b, AEVB_tot_b, unif_tot_b = evaluate_vs_uniform(theta, alpha, sigsq, ph
 
 tr_tot, det_tot, ra_tot = evaluate_det_vs_random(theta, alpha, sigsq, phi, TP, 1, opt_policy, T,
                         state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, learn_rate, traj_data, centers_x, centers_y, cr_reps)
+                        init_Q, J, B, m, M, Ti, N, learn_rate, traj_data, centers_x, centers_y, cr_reps)
 
 '''
 To do:
