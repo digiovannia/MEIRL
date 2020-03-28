@@ -324,7 +324,6 @@ def psi_all_states(state_space, centers_x, centers_y):
     '''
     dist_x = state_space[:,0][:,None] - centers_x
     dist_y = state_space[:,1][:,None] - centers_y
-    #bases = RESCALE*np.exp(-COEF*(dist_x**2 + dist_y**2)) #VAMPIRE_old
     bases = np.exp(-COEF*(dist_x**2 + dist_y**2))*RESCALE[None,:] - 1/2 #VAMPIRE_new
     inter = INTERCEPT_REW*np.ones(len(state_space))[:,None]
     return np.concatenate((bases, inter), axis=1)
@@ -351,12 +350,11 @@ def grad_lin_rew(data, state_space, centers_x, centers_y):
       centers_y)), 1, 2)
 
 
-def RE_all(theta, data, TP, state_space, m, centers_x, centers_y):
+def RE_all(reward_est, data, TP, state_space, m, centers_x, centers_y):
     '''
     Expected reward and beta function bases (eta) for an array of states and
     actions.
     '''
-    reward_est = lin_rew_func(theta, state_space, centers_x, centers_y)
     # converting int representation of states to coordinates
     data_x = data[:,0,:] // D
     data_y = data[:,0,:] % D
@@ -471,12 +469,16 @@ def sigsq_grad(glogZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all, gvec):
     return np.mean(result, axis=1)
 
 
-def logZ(sigsq, normals, meanvec, denom, impa, theta, data, M, TP, R_all, E_all,
+def logZ(sigsq, normals, meanvec, denom, impa, reward_est, data, M, TP, R_all, E_all,
          action_space, centers_x, centers_y, state_space, m, Ti):
-    reward_est = lin_rew_func(theta, state_space, centers_x, centers_y)
+    '''
+    Estimates of normalization constant and its gradient via importance
+    sampling
+    '''
+    # Expected reward and feature expectations for imp-sampling data
     R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
-                      imp_samp_data(data, impa, j, m, Ti).astype(int),
-                      TP, state_space) for j in range(M)]), 0, 1)
+      imp_samp_data(data, impa, j, m, Ti).astype(int), TP,
+      state_space) for j in range(M)]), 0, 1)
     lst = []
     for j in range(M):
         newdata = imp_samp_data(data, impa, j, m, Ti).astype(int)
@@ -578,14 +580,12 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     return true_total, totals[0], totals[1]
 
 
-def logZ_unif(beta, impa, theta, data, M, TP, state_space, action_space,
+def logZ_unif(beta, impa, reward_est, data, M, TP, state_space, action_space,
               m, Ti, centers_x, centers_y):
     '''
     Importance sampling approximation of logZ
     and grad logZ
     '''
-    reward_est = lin_rew_func(theta, state_space, centers_x, centers_y)
-
     R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
                       imp_samp_data(data, impa, j, m, Ti).astype(int),
                       TP, state_space) for j in range(M)]), 0, 1)
@@ -623,14 +623,12 @@ def theta_grad_unif(data, beta, state_space, glogZ_theta, centers_x, centers_y):
     return -glogZ_theta + (beta[:,None,None]*gradR).sum(axis=2).sum(axis=0) # each term is quite large
 
 
-def logZ_det(beta, impa, theta, data, M, TP, R_all, E_all, state_space,
+def logZ_det(beta, impa, reward_est, data, M, TP, R_all, E_all, state_space,
              action_space, m, Ti, centers_x, centers_y):
     '''
     Importance sampling approximation of logZ
     and grad logZ
     '''
-    reward_est = lin_rew_func(theta, state_space, centers_x, centers_y)
-
     R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
                       imp_samp_data(data, impa, j, m, Ti).astype(int),
                       TP, state_space) for j in range(M)]), 0, 1)
@@ -704,13 +702,15 @@ def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             y_phi, y_theta, y_alpha, y_sigsq = y_t_nest(phi, phi_m, theta, theta_m,
               alpha, alpha_m, sigsq, sigsq_m, t)
             data = np.array(traj_data[n]) # m x 2 x Ti
-            R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
+            reward_est = lin_rew_func(y_theta, state_space, centers_x,
+              centers_y)
+            R_all, E_all = RE_all(reward_est, data, TP, state_space, m, centers_x, centers_y)
             normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
             meanvec, denom, gvec, gnorm = grad_terms(normals,
               y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
             logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ(y_sigsq,
                                                                              normals,
-              meanvec, denom, impa, y_theta, data, M, TP, R_all, E_all, action_space,
+              meanvec, denom, impa, reward_est, data, M, TP, R_all, E_all, action_space,
               centers_x, centers_y, state_space, m, Ti)
           
             logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
@@ -769,12 +769,14 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             t = 1/2*(1 + np.sqrt(1 + 4*tm**2))
             
             data = np.array(traj_data[n]) # m x 2 x Ti
-            R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
+            reward_est = lin_rew_func(y_theta, state_space, centers_x,
+              centers_y)
+            R_all, E_all = RE_all(reward_est, data, TP, state_space, m, centers_x, centers_y)
             meanvec, denom, gvec, gnorm = grad_terms(normals,
               y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
             logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ(y_sigsq,
                                                                              normals,
-              meanvec, denom, impa, y_theta, data, M, TP, R_all, E_all, action_space,
+              meanvec, denom, impa, reward_est, data, M, TP, R_all, E_all, action_space,
               centers_x, centers_y, state_space, m, Ti)
           
             logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
@@ -821,8 +823,6 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                 tm = 1
                 
             last_lpd = logprobdiff
-            #sns.heatmap(lin_rew_func(theta, state_space, centers_x, centers_y))
-            #plt.show()
     if plot:
         plt.plot(elbos)
     return best_theta, best_phi, best_alpha, best_sigsq
@@ -859,12 +859,14 @@ def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             y_phi, y_theta, y_alpha, y_sigsq = y_t_nest(phi, phi_m, theta,
               theta_m, alpha, alpha_m, sigsq, sigsq_m, t)
             data = np.array(traj_data[n]) # m x 2 x Ti
-            R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
+            reward_est = lin_rew_func(y_theta, state_space, centers_x,
+              centers_y)
+            R_all, E_all = RE_all(reward_est, data, TP, state_space, m, centers_x, centers_y)
             normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
             meanvec, denom, gvec, gnorm = grad_terms(normals,
               y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
             (logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq,
-              glogZ_phi) = logZ(y_sigsq, normals, meanvec, denom, impa, y_theta,
+              glogZ_phi) = logZ(y_sigsq, normals, meanvec, denom, impa, reward_est,
               data, M, TP, R_all, E_all, action_space, centers_x, centers_y,
               state_space, m, Ti)
           
@@ -950,11 +952,13 @@ def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             t = 1/2*(1 + np.sqrt(1 + 4*tm**2))
             
             data = np.array(traj_data[n]) # m x 2 x Ti
-            R_all, E_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)
+            reward_est = lin_rew_func(y_theta, state_space, centers_x,
+              centers_y)
+            R_all, E_all = RE_all(reward_est, data, TP, state_space, m, centers_x, centers_y)
             beta = np.einsum('ij,ijk->ik', y_alpha, E_all)
             
             logZvec, glogZ_theta, glogZ_alpha = logZ_det(beta,
-              impa, y_theta, data, M, TP, R_all, E_all, state_space,
+              impa, reward_est, data, M, TP, R_all, E_all, state_space,
               action_space, m, Ti, centers_x, centers_y)
           
             loglikelihood = loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec).sum()
@@ -1011,9 +1015,11 @@ def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             y_theta, y_beta = y_t_nest_unif(theta, theta_m,
               beta, beta_m, t)
             data = np.array(traj_data[n]) # m x 2 x Ti
-            R_all = RE_all(y_theta, data, TP, state_space, m, centers_x, centers_y)[0]
+            reward_est = lin_rew_func(y_theta, state_space, centers_x,
+              centers_y)
+            R_all = RE_all(reward_est, data, TP, state_space, m, centers_x, centers_y)[0]
             logZvec, glogZ_theta, glogZ_beta = logZ_unif(y_beta, impa,
-              y_theta, data, M, TP, state_space, action_space, m, Ti, centers_x, centers_y)
+              reward_est, data, M, TP, state_space, action_space, m, Ti, centers_x, centers_y)
               
             g_theta = theta_grad_unif(data, y_beta, state_space, glogZ_theta, centers_x, centers_y)
             g_beta = beta_grad_unif(glogZ_beta, R_all)
@@ -1504,9 +1510,16 @@ seeds 120,140,160,180,200
 Added gradient clipping to all algos for >= 23!                  
                   
                   
+### 100s are results using thetas drawn from uniform, apparently no longer
+have issue where unif does better than random when trained on random data
+
+
+
+
+
                   
     
-**********(NOTE: MAY NEED TO REDO EVERYTHING BETWEEN #3 and #18)***************
+**********(NOTE: MAY NEED TO REDO EVERYTHING UNDER #100)***************
     
     * det_pos vs random; sigsq = 1.5
     * det_pos vs unif; sigsq = 1.5; ETA_COEF = 5
