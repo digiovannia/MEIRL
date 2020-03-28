@@ -151,10 +151,10 @@ def value_iter(state_space, action_space, rewards, TP, gam, tol):
             qval = Q[s,a]
             Q[s,a] = expect_rewards[s,a] + gam*(TP.dot(Q.max(axis=1)))[s,a]
             delta = np.max([delta, abs(qval - Q[s,a])])
-    policy = np.zeros((16, 16, 4))
+    policy = np.zeros((D, D, 4))
     for i in range(D):
         for j in range(D):
-            policy[i,j,np.argmax(Q[(16*i+j)])] = 1
+            policy[i,j,np.argmax(Q[(D*i+j)])] = 1
     return policy, Q.reshape(D, D, 4)
 
 
@@ -162,10 +162,10 @@ def eta(st):
     '''
     Features for beta function
     '''
-    return np.array([RESCALE*np.exp(-ETA_COEF*((st[0]-1)**2+(st[1]-1)**2)),
-      RESCALE*np.exp(-ETA_COEF*((st[0]-(D-2))**2+(st[1]-(D-2))**2)),
-      RESCALE*np.exp(-ETA_COEF*((st[0]-1)**2+(st[1]-(D-2))**2)),
-      RESCALE*np.exp(-ETA_COEF*((st[0]-(D-2))**2+(st[1]-1)**2)),
+    return np.array([np.exp(-ETA_COEF*((st[0]-1)**2+(st[1]-1)**2)),
+      np.exp(-ETA_COEF*((st[0]-(D-2))**2+(st[1]-(D-2))**2)),
+      np.exp(-ETA_COEF*((st[0]-1)**2+(st[1]-(D-2))**2)),
+      np.exp(-ETA_COEF*((st[0]-(D-2))**2+(st[1]-1)**2)),
       INTERCEPT_ETA])
 
 
@@ -287,7 +287,7 @@ def expect_reward_all(rewards, TP):
     '''
     Next-step reward equivalent of table of Q values
     '''
-    grid = np.mgrid[0:4,0:256]
+    grid = np.mgrid[0:4,0:(D**2)]
     return TP[grid[1],grid[0]].dot(np.ravel(rewards)).reshape(4,D,D)
 
 
@@ -324,7 +324,8 @@ def psi_all_states(state_space, centers_x, centers_y):
     '''
     dist_x = state_space[:,0][:,None] - centers_x
     dist_y = state_space[:,1][:,None] - centers_y
-    bases = RESCALE*np.exp(-COEF*(dist_x**2 + dist_y**2))
+    #bases = RESCALE*np.exp(-COEF*(dist_x**2 + dist_y**2)) #VAMPIRE_old
+    bases = np.exp(-COEF*(dist_x**2 + dist_y**2))*RESCALE[None,:] - 1/2 #VAMPIRE_new
     inter = INTERCEPT_REW*np.ones(len(state_space))[:,None]
     return np.concatenate((bases, inter), axis=1)
 
@@ -359,10 +360,10 @@ def RE_all(theta, data, TP, state_space, m, centers_x, centers_y):
     # converting int representation of states to coordinates
     data_x = data[:,0,:] // D
     data_y = data[:,0,:] % D
-    arr = np.array([RESCALE*np.exp(-ETA_COEF*((data_x-1)**2+(data_y-1)**2)),
-      RESCALE*np.exp(-ETA_COEF*((data_x-(D-2))**2+(data_y-(D-2))**2)),
-      RESCALE*np.exp(-ETA_COEF*((data_x-1)**2+(data_y-(D-2))**2)),
-      RESCALE*np.exp(-ETA_COEF*((data_x-(D-2))**2+(data_y-1)**2)),
+    arr = np.array([np.exp(-ETA_COEF*((data_x-1)**2+(data_y-1)**2)),
+      np.exp(-ETA_COEF*((data_x-(D-2))**2+(data_y-(D-2))**2)),
+      np.exp(-ETA_COEF*((data_x-1)**2+(data_y-(D-2))**2)),
+      np.exp(-ETA_COEF*((data_x-(D-2))**2+(data_y-1)**2)),
       INTERCEPT_ETA*np.ones(data[:,0,:].shape)])
     R_all = arr_expect_reward(reward_est, data, TP, state_space)
     E_all = np.swapaxes(arr, 0, 1)
@@ -552,6 +553,7 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
         ta = algo_a(theta, alpha, sigsq, phi, beta, traj_data, TP,
           state_space, action_space, B, m, M, Ti, learn_rate, reps, centers_x,
           centers_y, plot=False)[0]
+        #VAMPIRE
         if random:
             tb = np.random.normal(size=theta.shape)
         else:
@@ -1059,7 +1061,7 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
     MOVE_NOISE = 0.05
     INTERCEPT_ETA = 0
     WEIGHT = 2
-    RESCALE = 1
+    RESCALE = np.array([1,-1] * ((d-1) // 2))
     RESET = 20
     COEF = 0.1
     ETA_COEF = 0.01 #0.05 #0.1 #1
@@ -1070,7 +1072,7 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
     T = 50
     Ti = 20 # length of trajectory
     B = 50#100 # number of betas/normals sampled for expectation
-    INTERCEPT_REW = 0
+    INTERCEPT_REW = -1
     learn_rate = 0.5 #0.0001
     cr_reps = 10
     reps = 5
@@ -1109,7 +1111,7 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
         centers_x = np.random.choice(D, D//2)
         centers_y = np.random.choice(D, D//2)
         
-        theta_true = np.random.normal(size = D // 2 + 1, scale=3)
+        theta_true = 3*np.random.rand(D // 2 + 1) - 2 #np.random.normal(size = D // 2 + 1, scale=3) #VAMPIRE
         rewards = lin_rew_func(theta_true, state_space, centers_x, centers_y)
         sns.heatmap(rewards)
         plt.savefig('results/' + fname + '/' + 'true_reward.png')
@@ -1415,6 +1417,7 @@ To do:
      * compare diff sigsqs for different experts
      * test on MCMC...
      * vary seed used for everything *after* definition of the MDP
+     * increase number of features, for same size of MDP
      
 QUALITATIVE NOTES:
     * Good performance is basically elusive in large D MDPs when beta is allowed
@@ -1556,6 +1559,12 @@ likely to take each action in each state
 knowledge -- or just doing well because as long as you accidentally find at least one
 high-reward hub you can do well -- by testing it on purely random policy data.
 ** Okay, it does much worse than usual on the junk data, but still better 
-than random. Not good.
+than random (+260 out of 1200 vs -30)
+
+Trying on random data when D = 8 makes unif indistinguishable (in total reward)
+from random algo. So I guess this problem scales with D...
+
+Switched to uniform distribution to generate theta and now it's finally not
+working on random data
 '''
 
