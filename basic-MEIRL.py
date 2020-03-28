@@ -523,110 +523,10 @@ def logZ(sigsq, normals, meanvec, denom, impa, reward_est, data, M, TP, R_all,
       (num_p2.sum(axis=2)/den).sum(axis=2)])
     return logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi
 
-############################ Uniform beta model ##############################
-
-def logZ_unif(beta, impa, reward_est, data, M, TP, state_space, action_space,
-              m, Ti, centers_x, centers_y):
-    R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
-                      imp_samp_data(data, impa, j, m, Ti).astype(int),
-                      TP, state_space) for j in range(M)]), 0, 1)
-    lst = []
-    for j in range(M):
-        newdata = imp_samp_data(data, impa, j, m, Ti).astype(int)
-        feat_expect = grad_lin_rew(newdata, state_space, centers_x, centers_y)
-        lst.append(feat_expect)
-    gradR_Z = np.swapaxes(np.array(lst), 0, 1)
-    
-    expo = np.exp(beta[:,None,None]*R_Z)
-    lvec = np.log(len(action_space)*np.mean(expo,axis=1))
-    logZvec = lvec.sum(axis=1)
-
-    num_t = expo[:,:,None,:]*beta[:,None,None,None]*gradR_Z
-    num_b = expo*R_Z
-    numsum_t = num_t.sum(axis=1)
-    numsum_b = num_b.sum(axis=1)
-    den = expo.sum(axis=1)
-    glogZ_theta = ((numsum_t/den[:,None,:]).sum(axis=2)).sum(axis=0)
-    glogZ_beta = (numsum_b/den).sum(axis=1)
-    return logZvec, glogZ_theta, glogZ_beta
-
-
-def beta_grad_unif(glogZ_beta, R_all):
-    return -glogZ_beta + R_all.sum(axis=1)
-
-
-def theta_grad_unif(data, beta, state_space, glogZ_theta, centers_x, centers_y):
-    '''
-    Output m x d
-    '''
-    gradR = grad_lin_rew(data, state_space, centers_x, centers_y) # m x d x Ti 
-    return -glogZ_theta + (beta[:,None,None]*gradR).sum(axis=2).sum(axis=0) # each term is quite large
-
-
-def logZ_det(beta, impa, reward_est, data, M, TP, R_all, E_all, state_space,
-             action_space, m, Ti, centers_x, centers_y):
-    '''
-    Importance sampling approximation of logZ
-    and grad logZ
-    '''
-    R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
-                      imp_samp_data(data, impa, j, m, Ti).astype(int),
-                      TP, state_space) for j in range(M)]), 0, 1)
-    lst = []
-    for j in range(M):
-        newdata = imp_samp_data(data, impa, j, m, Ti).astype(int)
-        feat_expect = grad_lin_rew(newdata, state_space, centers_x, centers_y)
-        lst.append(feat_expect)
-    gradR_Z = np.swapaxes(np.array(lst), 0, 1)
-    
-    expo = np.exp(beta[:,None,:]*R_Z)
-    lvec = np.log(len(action_space)*np.mean(expo,axis=1)) # for all times
-    logZvec = lvec.sum(axis=1)
-
-    num_t = expo[:,:,None,:]*beta[:,None,None,:]*gradR_Z
-    num_a = np.einsum('ijk,ilk->ilk', expo*R_Z, E_all) #expo*R_Z
-    numsum_t = num_t.sum(axis=1)
-    den = expo.sum(axis=1)
-    glogZ_theta = ((numsum_t/den[:,None,:]).sum(axis=2)).sum(axis=0)
-    glogZ_alpha = (num_a/den[:,None,:]).sum(axis=2)
-    return logZvec, glogZ_theta, glogZ_alpha
-
-
-def alpha_grad_det(glogZ_alpha, R_all, E_all):
-    return -glogZ_alpha + np.einsum('ijk,ik->ij', E_all, R_all)
-
-
-def theta_grad_det(data, beta, state_space, glogZ_theta, centers_x, centers_y):
-    gradR = grad_lin_rew(data, state_space, centers_x, centers_y) # m x d x Ti 
-    return -glogZ_theta + np.einsum('ij,ikj->k', beta, gradR)
-
-
-def GD_unif(theta, beta, g_theta, g_beta, learn_rate):
-    theta = theta + learn_rate*g_theta
-    beta = beta + learn_rate*g_beta
-    return theta, beta
-
-
-def y_t_nest_unif(theta, theta_m, beta, beta_m, t):
-    const = (t-1)/(t+2)
-    return (theta - const*(theta - theta_m),
-            beta - const*(beta - beta_m))
-
-
-def loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec):
-    logT = np.log(1/len(state_space)) + np.sum(np.log(traj_TP(data, TP, Ti, m)), axis=1)
-    return -logZvec + logT + np.einsum('ij,ij->i', beta, R_all)
-
 
 def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
          plot=True):
-    '''
-    y_t is the function used to define modified iterate for Nesterov, if
-    applicable
-    
-    update is e.g. GD or Adam
-    '''
     impa = list(np.random.choice(action_space, M))
     N = len(traj_data)
     elbos = []
@@ -635,16 +535,17 @@ def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     alpha_m = np.zeros_like(alpha)
     sigsq_m = np.zeros_like(sigsq)
     t = 1
+    normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m, B))
     for _ in range(reps):
         permut = list(np.random.permutation(range(N)))
         for n in permut:
-            y_phi, y_theta, y_alpha, y_sigsq = y_t_nest(phi, phi_m, theta, theta_m,
-              alpha, alpha_m, sigsq, sigsq_m, t)
-            data = np.array(traj_data[n]) # m x 2 x Ti
+            y_phi, y_theta, y_alpha, y_sigsq = y_t_nest(phi, phi_m, theta,
+              theta_m, alpha, alpha_m, sigsq, sigsq_m, t)
+            data = np.array(traj_data[n])
             reward_est = lin_rew_func(y_theta, state_space, centers_x,
               centers_y)
-            R_all, E_all = RE_all(reward_est, data, TP, state_space, m, centers_x, centers_y)
-            normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
+            R_all, E_all = RE_all(reward_est, data, TP, state_space, m,
+              centers_x, centers_y)
             meanvec, denom, gvec, gnorm = grad_terms(normals,
               y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
             logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq, glogZ_phi = logZ(y_sigsq,
@@ -677,12 +578,6 @@ def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
 def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
          plot=True):
-    '''
-    y_t is the function used to define modified iterate for Nesterov, if
-    applicable
-    
-    update is e.g. GD or Adam
-    '''
     impa = list(np.random.choice(action_space, M))
     N = len(traj_data)
     elbos = []
@@ -701,7 +596,7 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     best_sigsq = sigsq_m.copy()
     tm = 1
     last_lpd = -np.inf
-    normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
+    normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m, B))
     for _ in range(reps):
         permut = list(np.random.permutation(range(N)))
         for n in permut:#permut[20:30]:
@@ -770,12 +665,6 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
 def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
          plot=True):
-    '''
-    y_t is the function used to define modified iterate for Nesterov, if
-    applicable
-    
-    update is e.g. GD or Adam
-    '''
     impa = list(np.random.choice(action_space, M))
     N = len(traj_data)
     elbos = []
@@ -791,17 +680,17 @@ def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     time_since_best = 0
     t = 1
     start_lr = learn_rate
+    normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m, B))
     for _ in range(reps):
         permut = list(np.random.permutation(range(N)))
         for n in permut:
             time_since_best += 1
             y_phi, y_theta, y_alpha, y_sigsq = y_t_nest(phi, phi_m, theta,
               theta_m, alpha, alpha_m, sigsq, sigsq_m, t)
-            data = np.array(traj_data[n]) # m x 2 x Ti
+            data = np.array(traj_data[n])
             reward_est = lin_rew_func(y_theta, state_space, centers_x,
               centers_y)
             R_all, E_all = RE_all(reward_est, data, TP, state_space, m, centers_x, centers_y)
-            normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m,B))
             meanvec, denom, gvec, gnorm = grad_terms(normals,
               y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
             (logZvec, glogZ_theta, glogZ_alpha, glogZ_sigsq,
@@ -863,16 +752,101 @@ def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
         plt.plot(elbos)
     return best_theta, best_phi, best_alpha, best_sigsq
 
+############################ Uniform beta model ##############################
+
+def beta_grad_unif(glogZ_beta, R_all):
+    return -glogZ_beta + R_all.sum(axis=1)
+
+
+def theta_grad_unif(data, beta, state_space, glogZ_theta, centers_x, centers_y):
+    gradR = grad_lin_rew(data, state_space, centers_x, centers_y)
+    return -glogZ_theta + (beta[:,None,None]*gradR).sum(axis=2).sum(axis=0)
+
+
+def logZ_unif(beta, impa, reward_est, data, M, TP, state_space, action_space,
+              m, Ti, centers_x, centers_y):
+    R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
+                      imp_samp_data(data, impa, j, m, Ti).astype(int),
+                      TP, state_space) for j in range(M)]), 0, 1)
+    lst = []
+    for j in range(M):
+        newdata = imp_samp_data(data, impa, j, m, Ti).astype(int)
+        feat_expect = grad_lin_rew(newdata, state_space, centers_x, centers_y)
+        lst.append(feat_expect)
+    gradR_Z = np.swapaxes(np.array(lst), 0, 1)
+    
+    expo = np.exp(beta[:,None,None]*R_Z)
+    lvec = np.log(len(action_space)*np.mean(expo,axis=1))
+    logZvec = lvec.sum(axis=1)
+
+    num_t = expo[:,:,None,:]*beta[:,None,None,None]*gradR_Z
+    num_b = expo*R_Z
+    numsum_t = num_t.sum(axis=1)
+    numsum_b = num_b.sum(axis=1)
+    den = expo.sum(axis=1)
+    glogZ_theta = ((numsum_t/den[:,None,:]).sum(axis=2)).sum(axis=0)
+    glogZ_beta = (numsum_b/den).sum(axis=1)
+    return logZvec, glogZ_theta, glogZ_beta
+
+
+def GD_unif(theta, beta, g_theta, g_beta, learn_rate):
+    theta = theta + learn_rate*g_theta
+    beta = beta + learn_rate*g_beta
+    return theta, beta
+
+
+def y_t_nest_unif(theta, theta_m, beta, beta_m, t):
+    const = (t-1)/(t+2)
+    return (theta - const*(theta - theta_m),
+            beta - const*(beta - beta_m))
+
+
+def logZ_det(beta, impa, reward_est, data, M, TP, R_all, E_all, state_space,
+             action_space, m, Ti, centers_x, centers_y):
+    '''
+    Importance sampling approximation of logZ
+    and grad logZ
+    '''
+    R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
+                      imp_samp_data(data, impa, j, m, Ti).astype(int),
+                      TP, state_space) for j in range(M)]), 0, 1)
+    lst = []
+    for j in range(M):
+        newdata = imp_samp_data(data, impa, j, m, Ti).astype(int)
+        feat_expect = grad_lin_rew(newdata, state_space, centers_x, centers_y)
+        lst.append(feat_expect)
+    gradR_Z = np.swapaxes(np.array(lst), 0, 1)
+    
+    expo = np.exp(beta[:,None,:]*R_Z)
+    lvec = np.log(len(action_space)*np.mean(expo,axis=1)) # for all times
+    logZvec = lvec.sum(axis=1)
+
+    num_t = expo[:,:,None,:]*beta[:,None,None,:]*gradR_Z
+    num_a = np.einsum('ijk,ilk->ilk', expo*R_Z, E_all) #expo*R_Z
+    numsum_t = num_t.sum(axis=1)
+    den = expo.sum(axis=1)
+    glogZ_theta = ((numsum_t/den[:,None,:]).sum(axis=2)).sum(axis=0)
+    glogZ_alpha = (num_a/den[:,None,:]).sum(axis=2)
+    return logZvec, glogZ_theta, glogZ_alpha
+
+
+def alpha_grad_det(glogZ_alpha, R_all, E_all):
+    return -glogZ_alpha + np.einsum('ijk,ik->ij', E_all, R_all)
+
+
+def theta_grad_det(data, beta, state_space, glogZ_theta, centers_x, centers_y):
+    gradR = grad_lin_rew(data, state_space, centers_x, centers_y) # m x d x Ti 
+    return -glogZ_theta + np.einsum('ij,ikj->k', beta, gradR)
+
+
+def loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec):
+    logT = np.log(1/len(state_space)) + np.sum(np.log(traj_TP(data, TP, Ti, m)), axis=1)
+    return -logZvec + logT + np.einsum('ij,ij->i', beta, R_all)
+
 
 def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, learn_rate, reps, centers_x, centers_y,
          plot=True):
-    '''
-    y_t is the function used to define modified iterate for Nesterov, if
-    applicable
-    
-    update is e.g. GD or Adam
-    '''
     impa = list(np.random.choice(action_space, M))
     N = len(traj_data)
     lik = []
@@ -1038,7 +1012,7 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     if save:
         plt.savefig(save[0] + '___' + save[1] + '.png')
         plt.show()
-    return true_total, totals[0], totals[1]
+    return true_total, totals[0], totals[1], np.sd(totals[0]), np.sd(totals[1])
 
 
 seeds_1 = [20,40,60,80,100]
@@ -1136,7 +1110,7 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
             alg_b_str = str(algo_b).split()[1]
         
         if test_data == 'myo':
-            true_tot, a_tot_p, b_tot_p = evaluate_general(theta, alpha, sigsq, phi, beta, 
+            true_tot, a_tot, b_tot, a_sd, b_sd = evaluate_general(theta, alpha, sigsq, phi, beta, 
                                                          traj_data,
               TP, state_space,
               action_space, B, m, M, Ti, learn_rate, reps, opt_policy, T,
@@ -1145,7 +1119,7 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
               save=['results/' + fname + '/' + fname,
                     alg_a_str + '__' + alg_b_str])
         else:
-            true_tot, a_tot_p, b_tot_p = evaluate_general(theta, alpha, sigsq, phi, beta,
+            true_tot, a_tot, b_tot, a_sd, b_sd = evaluate_general(theta, alpha, sigsq, phi, beta,
                                                           boltz_data,
               TP, state_space,
               action_space, B, m, M, Ti, learn_rate, reps, opt_policy, T,
@@ -1188,8 +1162,10 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
         f.write('test_data = ' + str(test_data) + '\n')
             
         f.write('true_tot = ' + str(true_tot) + '\n')
-        f.write('mean algo_a_tot = ' + str(np.mean(a_tot_p)) + '\n')
-        f.write('mean algo_b_tot = ' + str(np.mean(b_tot_p)) + '\n')
+        f.write('mean algo_a_tot = ' + str(np.mean(a_tot)) + '\n')
+        f.write('sd algo_a_tot = ' + str(a_sd) + '\n')
+        f.write('mean algo_b_tot = ' + str(np.mean(b_tot)) + '\n')
+        f.write('sd algo_b_tot = ' + str(b_sd) + '\n')
         f.close()
     
 #%%
