@@ -1667,9 +1667,28 @@ working on random data
 [need to test all 10 seeds; vary sigsq, ETA_COEF, N?]
 
 RESULTS FROM results_var_hyper:
-1) sigsq varying from 0.01, 0.1, 1, 5
+1) [seed 20] sigsq varying from 0.01, 0.1, 1, 5 --- good candidate for boltz comparison
+2) [seed 60] sigsq varying from 0.01, 0.1, 1, 5
+3) [seed 100] sigsq varying from 0.01, 0.1, 1, 5 --- good candidate for boltz comparison
+4) [seed 140] sigsq varying from 0.01, 0.1, 1, 5
+5) [seed 180] sigsq varying from 0.01, 0.1, 1, 5
+6) [seed 20, boltz] sigsq varying from 0.01, 0.1, 1, 5
+7) [seed 60, boltz] sigsq varying from 0.01, 0.1, 1, 5
+8)
+9)
+10)
+11) [seed 20] ETA_COEF varying from 0.01, 0.05, 0.5
+12) [seed 60] ETA_COEF varying from 0.01, 0.05, 0.5
+                 
+                 
+                 
+ETA_COEF varying from 0.01, 0.05, 0.5
 '''
 
+'''
+Include results from random data and from very high ETA_COEF as evidence that
+the algos aren't cheating
+'''
 
 
 '''
