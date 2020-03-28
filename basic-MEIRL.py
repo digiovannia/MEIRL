@@ -550,6 +550,13 @@ def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m,
               normals, R_all, logZvec, meanvec, denom)
             elbos.append(logprobdiff)
+            
+            if logprobdiff > best:
+                best = logprobdiff
+                best_phi = y_phi.copy()
+                best_theta = y_theta.copy()
+                best_alpha = y_alpha.copy()
+                best_sigsq = y_sigsq.copy()
               
             g_phi = phi_grad_ae(y_phi, m, Ti, normals, denom, y_sigsq, gZ_phi)
             g_theta = theta_grad_ae(gZ_theta, data, state_space, R_all, E_all,
@@ -576,13 +583,6 @@ def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             
             learn_rate *= 0.99
             tm = t
-            
-            if logprobdiff > best:
-                best = logprobdiff
-                best_phi = y_phi.copy()
-                best_theta = y_theta.copy()
-                best_alpha = y_alpha.copy()
-                best_sigsq = y_sigsq.copy()
     if plot:
         plt.plot(elbos)
     return best_theta, best_phi, best_alpha, best_sigsq
@@ -628,16 +628,23 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
               normals, meanvec, denom, impa, reward_est, data, M, TP, R_all,
               E_all, action_space, centers_x, centers_y, state_space, m, Ti)
           
-            logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
-              logZvec, meanvec, denom)
+            logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m,
+              normals, R_all, logZvec, meanvec, denom)
             elbos.append(logprobdiff)
+            
+            if logprobdiff > best:
+                best = logprobdiff
+                best_phi = y_phi.copy()
+                best_theta = y_theta.copy()
+                best_alpha = y_alpha.copy()
+                best_sigsq = y_sigsq.copy()
               
             g_phi = phi_grad_ae(y_phi, m, Ti, normals, denom, y_sigsq, gZ_phi)
             g_theta = theta_grad_ae(gZ_theta, data, state_space, R_all, E_all,
               y_sigsq, y_alpha, centers_x, centers_y)
             g_alpha = alpha_grad_ae(gZ_alpha, E_all, R_all)
-            g_sigsq = sigsq_grad_ae(gZ_sigsq, normals, Ti, y_sigsq, gnorm, denom,
-              R_all, gvec)
+            g_sigsq = sigsq_grad_ae(gZ_sigsq, normals, Ti, y_sigsq, gnorm,
+              denom, R_all, gvec)
             
             g_phi = g_phi / np.linalg.norm(g_phi)
             g_theta = g_theta / np.linalg.norm(g_theta)
@@ -645,8 +652,8 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             g_sigsq = g_sigsq / np.linalg.norm(g_sigsq)
           
             phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
-            phi, theta, alpha, sigsq = GD(y_phi, y_theta, y_alpha, y_sigsq, g_phi,
-              g_theta, g_alpha, g_sigsq, learn_rate)
+            phi, theta, alpha, sigsq = GD(y_phi, y_theta, y_alpha, y_sigsq,
+              g_phi, g_theta, g_alpha, g_sigsq, learn_rate)
             
             mult = (tm - 1)/t
             y_phi = phi + mult*(phi - phi_m)
@@ -659,13 +666,7 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             learn_rate *= 0.99
             tm = t
             
-            if logprobdiff > best:
-                best = logprobdiff
-                best_phi = y_phi.copy()
-                best_theta = y_theta.copy()
-                best_alpha = y_alpha.copy()
-                best_sigsq = y_sigsq.copy()
-            elif logprobdiff < last_lpd:
+            if logprobdiff < last_lpd:
                 y_phi = phi.copy()
                 y_theta = theta.copy()
                 y_alpha = alpha.copy()
@@ -705,37 +706,41 @@ def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     start_lr = learn_rate
     normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m, B))
     
-    # FINISH
-    
     for _ in range(reps):
         permut = list(np.random.permutation(range(N)))
         for n in permut:
             time_since_best += 1
-            y_phi, y_theta, y_alpha, y_sigsq = y_t_nest(phi, phi_m, theta,
-              theta_m, alpha, alpha_m, sigsq, sigsq_m, t)
+            t = 1/2*(1 + np.sqrt(1 + 4*tm**2))
+
             data = np.array(traj_data[n])
             reward_est = lin_rew_func(y_theta, state_space, centers_x,
               centers_y)
-            R_all, E_all = RE_all(reward_est, data, TP, state_space, m, centers_x, centers_y)
-            meanvec, denom, gvec, gnorm = grad_terms(normals,
-              y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
-            (logZvec, gZ_theta, gZ_alpha, gZ_sigsq,
-              gZ_phi) = logZ(y_sigsq, normals, meanvec, denom, impa, reward_est,
-              data, M, TP, R_all, E_all, action_space, centers_x, centers_y,
-              state_space, m, Ti)
+            R_all, E_all = RE_all(reward_est, data, TP, state_space, m,
+              centers_x, centers_y)
+            meanvec, denom, gvec, gnorm = grad_terms(normals, y_phi, y_alpha,
+              y_sigsq, y_theta, data, R_all, E_all, Ti, m)
+            logZvec, gZ_theta, gZ_alpha, gZ_sigsq, gZ_phi = logZ(y_sigsq,
+              normals, meanvec, denom, impa, reward_est, data, M, TP, R_all,
+              E_all, action_space, centers_x, centers_y, state_space, m, Ti)
           
             logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m,
               normals, R_all, logZvec, meanvec, denom)
             elbos.append(logprobdiff)
-            #print(lp - lq)
+            
+            if logprobdiff > best:
+                best = logprobdiff
+                best_phi = y_phi.copy()
+                best_theta = y_theta.copy()
+                best_alpha = y_alpha.copy()
+                best_sigsq = y_sigsq.copy()
+                time_since_best = 0
               
-            g_phi = phi_grad_ae(y_phi, m, Ti, normals, denom, y_sigsq,
-              gZ_phi)
-            g_theta = theta_grad_ae(gZ_theta, data, state_space,
-              R_all, E_all, y_sigsq, y_alpha, centers_x, centers_y)
+            g_phi = phi_grad_ae(y_phi, m, Ti, normals, denom, y_sigsq, gZ_phi)
+            g_theta = theta_grad_ae(gZ_theta, data, state_space, R_all, E_all,
+              y_sigsq, y_alpha, centers_x, centers_y)
             g_alpha = alpha_grad_ae(gZ_alpha, E_all, R_all)
-            g_sigsq = sigsq_grad_ae(gZ_sigsq, normals, Ti, y_sigsq,
-              gnorm, denom, R_all, gvec)
+            g_sigsq = sigsq_grad_ae(gZ_sigsq, normals, Ti, y_sigsq, gnorm,
+              denom, R_all, gvec)
             
             g_phi = g_phi / np.linalg.norm(g_phi)
             g_theta = g_theta / np.linalg.norm(g_theta)
@@ -743,19 +748,20 @@ def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             g_sigsq = g_sigsq / np.linalg.norm(g_sigsq)
           
             phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
-            phi, theta, alpha, sigsq = GD(y_phi, y_theta, y_alpha,
-              y_sigsq, g_phi, g_theta, g_alpha, g_sigsq, learn_rate)
-
-            if logprobdiff > best:
-                best = logprobdiff
-                best_phi = phi.copy()
-                best_theta = theta.copy()
-                best_alpha = alpha.copy()
-                best_sigsq = sigsq.copy()
-                time_since_best = 0
+            phi, theta, alpha, sigsq = GD(y_phi, y_theta, y_alpha, y_sigsq,
+              g_phi, g_theta, g_alpha, g_sigsq, learn_rate)
+            
+            mult = (tm - 1)/t
+            y_phi = phi + mult*(phi - phi_m)
+            y_phi[:,1] = np.maximum(y_phi[:,1], 0.01)
+            y_theta = theta + mult*(theta - theta_m)
+            #y_alpha = alpha + mult*(alpha - alpha_m)
+            y_alpha = np.maximum(alpha + mult*(alpha - alpha_m), 0)
+            y_sigsq = np.maximum(sigsq + mult*(sigsq - sigsq_m), 0.01)
             
             learn_rate *= 0.99
             t += 1
+            
             if time_since_best > RESET:
                 phi_m = np.zeros_like(phi)
                 theta_m = np.zeros_like(theta)
@@ -773,7 +779,6 @@ def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                   size=sigsq.shape)
                 sigsq = np.maximum(sigsq, 0.01)
                 time_since_best = 0
-                #print('RESET')
     if plot:
         plt.plot(elbos)
     return best_theta, best_phi, best_alpha, best_sigsq
@@ -852,6 +857,11 @@ def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             loglikelihood = loglik(state_space, Ti, y_beta, data, TP, m, R_all,
               logZvec, unif=True).sum()
             lik.append(loglikelihood)
+            
+            if loglikelihood > best:
+                best = loglikelihood
+                best_theta = y_theta.copy()
+                best_beta = y_beta.copy()
               
             g_theta = theta_grad_unif(data, y_beta, state_space, gZ_theta,
               centers_x, centers_y)
@@ -871,11 +881,7 @@ def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             learn_rate *= 0.99
             tm = t
             
-            if loglikelihood > best:
-                best = loglikelihood
-                best_theta = y_theta.copy()
-                best_beta = y_beta.copy()
-            elif loglikelihood < last_lik:
+            if loglikelihood < last_lik:
                 y_theta = theta.copy()
                 y_beta = beta.copy()
                 tm = 1
@@ -965,6 +971,11 @@ def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
               logZvec).sum()
             # appears not to be maximized at true theta/alpha, why?
             lik.append(loglikelihood)
+            
+            if loglikelihood > best:
+                best = loglikelihood
+                best_theta = y_theta.copy()
+                best_alpha = y_alpha.copy()
               
             g_theta = theta_grad_det(data, beta, state_space, gZ_theta,
               centers_x, centers_y)
@@ -984,11 +995,7 @@ def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             learn_rate *= 0.99
             tm = t
             
-            if loglikelihood > best:
-                best = loglikelihood
-                best_theta = y_theta.copy()
-                best_alpha = y_alpha.copy()
-            elif loglikelihood < last_lik:
+            if loglikelihood < last_lik:
                 y_theta = theta.copy()
                 y_alpha = alpha.copy()
                 tm = 1
@@ -1585,7 +1592,6 @@ To do:
      * count of states where myo best and opt best differ
      * look at learning process of meirl-unif on seed 160, boltz data, in detail, how does
      it work so well?
-     * make all nesterovs consistent
      
 QUALITATIVE NOTES:
     * Good performance is basically elusive in large D MDPs when beta is allowed
@@ -1691,7 +1697,7 @@ Added gradient clipping to all algos for >= 23!
 
                              # AFTER MODIFYING UNIF TO USE FISTA #
 200) meirl_unif vs random  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1 
-
+201) AR_AEVB vs ann_AEVB  ;  INTERCEPT_REW = -1, sigsqs = 0.1; seeds_1 
                   
     
 **********(NOTE: MAY NEED TO REDO EVERYTHING UNDER #100)***************
