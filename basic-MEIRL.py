@@ -57,20 +57,6 @@ def multi_state_index(states):
     return D*states[:,0]+states[:,1]
 
 
-def stoch_policy(det_policy, action_space):
-    '''
-    Turns an array of actions corresponding to a
-    deterministic policy into a "stochastic" policy
-    (1 on the action chosen, 0 else)
-    '''
-    x = np.repeat(range(D), D)
-    y = np.tile(range(D), D)
-    z = np.ravel(det_policy)
-    out = np.zeros((D,D,len(action_space)))
-    out[x,y,z] = 1
-    return out
-
-
 def transition(state_space, action_space):
     '''
     Creates transition dynamics tensor based on step rules of the grid world.
@@ -1076,7 +1062,7 @@ def cumulative_reward(s_list, cr_reps, policy, T, state_space, action_space, rew
 
 def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                      action_space, B, m, M, Ti, N, learn_rate, reps, policy, T,
-                     rewards, init_policy, init_Q, J, centers_x, centers_y,
+                     rewards, init_Q, J, centers_x, centers_y,
                      cr_reps, algo_a, algo_b, random=False, save=False):
     start = datetime.datetime.now()
     s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
@@ -1117,7 +1103,7 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
 seeds_1 = [20,40,60,80,100]
 seeds_2 = [120,140,160,180,200]
 
-hyparams = {'D': 16,
+HYPARAMS = {'D': 16,
             'MOVE_NOISE': 0.05,
             'INTERCEPT_ETA': 0,
             'WEIGHT': 2,
@@ -1132,55 +1118,41 @@ hyparams = {'D': 16,
             'Ti': 20,
             'B': 50,
             'INTERCEPT_REW': -1,
-            }
+            'learn_rate': 0.5,
+            'cr_reps': 10,
+            'reps': 5,
+            'sigsq_list': [1.5,1.5,1.5,1.5]}
 
 def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
-                 test_data='myo', seeds=seeds_1):
+                 test_data='myo', seeds=seeds_1, hyparams=HYPARAMS):
     
     # Global params
     global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, RESCALE, RESET, COEF
     global ETA_COEF, GAM, M, N, J, T, Ti, B, INTERCEPT_REW, TP
-    D=16 #8 #6x
+    (D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, RESET, COEF, ETA_COEF, GAM, M, N, J,
+      T, Ti, B, INTERCEPT_REW, learn_rate, cr_reps, reps,
+      sigsq_list) = (hyparams['D'], hyparams['MOVE_NOISE'],
+      hyparams['INTERCEPT_ETA'], hyparams['WEIGHT'], hyparams['RESET'],
+      hyparams['COEF'], hyparams['ETA_COEF'], hyparams['GAM'], hyparams['M'],
+      hyparams['N'], hyparams['J'], hyparams['T'], hyparams['Ti'],
+      hyparams['B'], hyparams['INTERCEPT_REW'], hyparams['learn_rate'],
+      hyparams['cr_reps'], hyparams['reps'], hyparams['sigsq_list'])
     d = D // 2 + 1
-    MOVE_NOISE = 0.05
-    INTERCEPT_ETA = 0
-    WEIGHT = 2
-    RESET = 20
-    COEF = 0.1
-    ETA_COEF = 0.01 #0.05 #0.1 #1
-    GAM = 0.9
-    M = 20 # number of actions used for importance sampling
-    N = 100#20 #100 #2000 # number of trajectories per expert
-    J = 20#10 # should be 30....
-    T = 50
-    Ti = 20 # length of trajectory
-    B = 50#100 # number of betas/normals sampled for expectation
-    INTERCEPT_REW = -1
-    learn_rate = 0.5 #0.0001
-    cr_reps = 10
-    reps = 5
     state_space = np.array([(i,j) for i in range(D) for j in range(D)])
     action_space = list(range(4))
     TP = transition(state_space, action_space)
     
-    alpha1 = np.array([WEIGHT, 0, 0, 0, 1]) # (1,1)
-    alpha2 = np.array([0, 0, WEIGHT, 0, 1]) # (1,4)
-    alpha3 = np.array([0, 0, 0, WEIGHT, 1]) # (4,4)
+    alpha1 = np.array([WEIGHT, 0, 0, 0, 1])
+    alpha2 = np.array([0, 0, WEIGHT, 0, 1])
+    alpha3 = np.array([0, 0, 0, WEIGHT, 1]) 
     alpha4 = np.array([0, WEIGHT, 0, 0, 1])
     
     p = alpha1.shape[0]
     m = 4
-
-    sigsq1 = 1.5#2#0.01
-    sigsq2 = 1.5#2#0.01
-    sigsq3 = 1.5#2#0.01
-    sigsq4 = 1.5#2#0.01
     
     ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4])
-    ex_sigsqs = np.array([sigsq1, sigsq2, sigsq3, sigsq4])
+    ex_sigsqs = np.array(sigsq_list)
     
-    init_det_policy = np.random.choice([0,1,2,3], size=(D,D))
-    init_policy = stoch_policy(init_det_policy, action_space)
     init_Q = np.random.rand(D,D,4)
     
     for seed in seeds:
@@ -1229,7 +1201,7 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
                                                          traj_data,
               TP, state_space,
               action_space, B, m, M, Ti, N, learn_rate, reps, opt_policy, T,
-              rewards, init_policy, init_Q, J, centers_x, centers_y,
+              rewards, init_Q, J, centers_x, centers_y,
               cr_reps, algo_a, algo_b, random=random,
               save=['results/' + fname + '/' + fname,
                     alg_a_str + '__' + alg_b_str])
@@ -1238,7 +1210,7 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
                                                           boltz_data,
               TP, state_space,
               action_space, B, m, M, Ti, N, learn_rate, reps, opt_policy, T,
-              rewards, init_policy, init_Q, J, centers_x, centers_y,
+              rewards, init_Q, J, centers_x, centers_y,
               cr_reps, algo_a, algo_b, random=random,
               save=['results/' + fname + '/' + fname,
                     alg_a_str + '__' + alg_b_str])
@@ -1384,20 +1356,6 @@ dumb_data = make_data(alpha_star_2, sigsq_star_2, lin_rew_func(theta_star_2,
 theta_s, beta_s = MEIRL_unif(theta, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, 1, GD_unif, centers_x, centers_y)
 
-true_tot, AEVB_tot, unif_tot = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
-                        state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, N, learn_rate, traj_data, centers_x, centers_y, cr_reps)
-# Using AR_AEVB as the inner loop, this works p well on D=8
-
-true_tot, AEVB_tot, det_tot = evaluate_vs_det(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
-                        state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, N, learn_rate, traj_data, centers_x, centers_y, cr_reps)
-
-true_tot, det_tot_p, unif_tot_p = evaluate_det_vs_unif(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, T,
-                        state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, N, learn_rate, traj_data,
-                        centers_x, centers_y, cr_reps)
-
 '''
 ^ results from this, ****SEED 10****:
 true_tot
@@ -1417,11 +1375,6 @@ SEED 30: again, det and unif matching optimal; random theta def doesn't, so
  not trivial
 '''
 
-true_tot_b, AEVB_tot_b, unif_tot_b = evaluate_vs_uniform(theta, alpha, sigsq, phi, beta, TP, 1, opt_policy, 30,
-                        state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, N, learn_rate, boltz_data, centers_x, centers_y, cr_reps)
-# Works robustly well! This is on data where the demonstrators are Q-softmaxing,
-# not next-step reward!
 
 # evidently sensitive to initialization, but maybe there's something principled
 # about initializing at theta = 0? Implies prior of ignorance about reward
@@ -1446,10 +1399,6 @@ true_tot_b, AEVB_tot_b, unif_tot_b = evaluate_vs_uniform(theta, alpha, sigsq, ph
 
 # works p well even under misspecification for D = 8
 # doesn't really work on D = 16 grid
-
-tr_tot, det_tot, ra_tot = evaluate_det_vs_random(theta, alpha, sigsq, phi, TP, 1, opt_policy, T,
-                        state_space, action_space, rewards, init_policy,
-                        init_Q, J, B, m, M, Ti, N, learn_rate, traj_data, centers_x, centers_y, cr_reps)
 
 '''
 To do:
@@ -1664,5 +1613,30 @@ from random algo. So I guess this problem scales with D...
 
 Switched to uniform distribution to generate theta and now it's finally not
 working on random data
+'''
+
+
+
+
+
+
+'''
+MOVE_NOISE = 0.05
+    INTERCEPT_ETA = 0
+    WEIGHT = 2
+    RESET = 20
+    COEF = 0.1
+    ETA_COEF = 0.01 #0.05 #0.1 #1
+    GAM = 0.9
+    M = 20 # number of actions used for importance sampling
+    N = 100#20 #100 #2000 # number of trajectories per expert
+    J = 20#10 # should be 30....
+    T = 50
+    Ti = 20 # length of trajectory
+    B = 50#100 # number of betas/normals sampled for expectation
+    INTERCEPT_REW = -1
+    learn_rate = 0.5 #0.0001
+    cr_reps = 10
+    reps = 5
 '''
 
