@@ -620,13 +620,13 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             data = np.array(traj_data[n])
             reward_est = lin_rew_func(y_theta, state_space, centers_x,
               centers_y)
-            R_all, E_all = RE_all(reward_est, data, TP, state_space, m, centers_x, centers_y)
+            R_all, E_all = RE_all(reward_est, data, TP, state_space, m,
+              centers_x, centers_y)
             meanvec, denom, gvec, gnorm = grad_terms(normals,
               y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
             logZvec, gZ_theta, gZ_alpha, gZ_sigsq, gZ_phi = logZ(y_sigsq,
-                                                                             normals,
-              meanvec, denom, impa, reward_est, data, M, TP, R_all, E_all, action_space,
-              centers_x, centers_y, state_space, m, Ti)
+              normals, meanvec, denom, impa, reward_est, data, M, TP, R_all,
+              E_all, action_space, centers_x, centers_y, state_space, m, Ti)
           
             logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m, normals, R_all,
               logZvec, meanvec, denom)
@@ -650,10 +650,11 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             
             mult = (tm - 1)/t
             y_phi = phi + mult*(phi - phi_m)
+            y_phi[:,1] = np.maximum(y_phi[:,1], 0.01)
             y_theta = theta + mult*(theta - theta_m)
             #y_alpha = alpha + mult*(alpha - alpha_m)
             y_alpha = np.maximum(alpha + mult*(alpha - alpha_m), 0)
-            y_sigsq = sigsq + mult*(sigsq - sigsq_m)
+            y_sigsq = np.maximum(sigsq + mult*(sigsq - sigsq_m), 0.01)
             
             learn_rate *= 0.99
             tm = t
@@ -672,10 +673,11 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                 tm = 1
                 
             last_lpd = logprobdiff
+            #sns.heatmap(lin_rew_func(theta, state_space, centers_x, centers_y))
+            #plt.show()
     if plot:
         plt.plot(elbos)
     return best_theta, best_phi, best_alpha, best_sigsq
-
 
 def ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
@@ -819,46 +821,9 @@ def GD_unif(theta, beta, g_theta, g_beta, learn_rate):
     return theta, beta
 
 
-def y_t_nest_unif(theta, theta_m, beta, beta_m, t):
-    const = (t-1)/(t+2)
-    return (theta - const*(theta - theta_m),
-            beta - const*(beta - beta_m))
-
-
 def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
          plot=True):
-    '''
-    impa = list(np.random.choice(action_space, M))
-    theta_m = np.zeros_like(theta)
-    beta_m = np.zeros_like(beta)
-    t = 1
-    for _ in range(reps):
-        permut = list(np.random.permutation(range(N)))
-        for n in permut:
-            y_theta, y_beta = y_t_nest_unif(theta, theta_m,
-              beta, beta_m, t)
-            data = np.array(traj_data[n]) # m x 2 x Ti
-            reward_est = lin_rew_func(y_theta, state_space, centers_x,
-              centers_y)
-            R_all = RE_all(reward_est, data, TP, state_space, m, centers_x, centers_y)[0]
-            logZvec, gZ_theta, gZ_beta = logZ_unif(y_beta, impa,
-              reward_est, data, M, TP, state_space, action_space, m, Ti, centers_x, centers_y)
-              
-            g_theta = theta_grad_unif(data, y_beta, state_space, gZ_theta, centers_x, centers_y)
-            g_beta = beta_grad_unif(gZ_beta, R_all)
-            
-            g_theta = g_theta / np.linalg.norm(g_theta)
-            g_beta = g_beta / np.linalg.norm(g_beta)
-          
-            theta_m, beta_m = theta, beta
-            theta, beta = GD_unif(y_theta, y_beta, g_theta, g_beta, learn_rate)
-            beta = np.maximum(0, beta)
-            
-            learn_rate *= 0.99
-            t += 1
-    return theta, beta
-    '''
     impa = list(np.random.choice(action_space, M))
     lik = []
     theta_m = np.zeros_like(theta)
@@ -1100,6 +1065,46 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     return true_total, totals[0], totals[1], np.std(totals[0]), np.std(totals[1])
 
 
+def evaluate_all(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
+                     action_space, B, m, M, Ti, N, learn_rate, reps, policy, T,
+                     rewards, init_Q, J, centers_x, centers_y,
+                     cr_reps, algo_a, algo_b, random=False, save=False):
+    start = datetime.datetime.now()
+    s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
+    true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space,
+      action_space, rewards)
+    plt.plot(np.cumsum(true_rew), color='b') 
+    true_total = np.sum(true_rew)
+    totals = [[],[]]
+    cols = ['r', 'g']
+    for j in range(J):
+        ta = algo_a(theta, alpha, sigsq, phi, beta, traj_data, TP,
+          state_space, action_space, B, m, M, Ti, N, learn_rate, reps, centers_x,
+          centers_y, plot=False)[0]
+        if random:
+            tb = np.random.normal(size=theta.shape)
+        else:
+            tb = algo_b(theta, alpha, sigsq, phi, beta,
+              traj_data, TP, state_space, action_space, B, m, M, Ti, N, learn_rate,
+              reps, centers_x, centers_y, plot=False)[0]
+        theta_stars = [ta, tb]
+        for i in range(2):
+            reward_est = lin_rew_func(theta_stars[i], state_space, centers_x,
+              centers_y)
+            est_policy = value_iter(state_space, action_space, reward_est, TP,
+              GAM, 1e-5)[0]
+            est_rew = cumulative_reward(s_list, cr_reps, est_policy, T,
+              state_space, action_space, rewards)
+            plt.plot(np.cumsum(est_rew), color=cols[i])
+            totals[i].append(np.sum(est_rew))
+        sec = (datetime.datetime.now() - start).total_seconds()
+        print(str(round((j+1)/J*100, 3)) + '% done: ' + str(round(sec / 60, 3)))
+    if save:
+        plt.savefig(save[0] + '___' + save[1] + '.png')
+        plt.show()
+    return true_total, totals[0], totals[1], np.std(totals[0]), np.std(totals[1])
+
+
 seeds_1 = [20,40,60,80,100]
 seeds_2 = [120,140,160,180,200]
 
@@ -1121,10 +1126,14 @@ HYPARAMS = {'D': 16,
             'learn_rate': 0.5,
             'cr_reps': 10,
             'reps': 5,
-            'sigsq_list': [1.5,1.5,1.5,1.5]}
+            'sigsq_list': [0.1, 0.1, 0.1, 0.1]} #[1.5,1.5,1.5,1.5]}
 
 def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
                  test_data='myo', seeds=seeds_1, hyparams=HYPARAMS):
+    '''
+    Compares two algorithms with each other (and with ground truth reward)
+    with varying seed values, including varying reward functions
+    '''
     
     # Global params
     global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, RESCALE, RESET, COEF
@@ -1255,7 +1264,139 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
         f.close()
         
 
-def results_varying_hyper():
+def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
+                      hyparams=HYPARAMS):
+    SEED_NUM = seed
+    for par in par_vals:
+        pass
+    
+    # Global params
+    global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, RESCALE, RESET, COEF
+    global ETA_COEF, GAM, M, N, J, T, Ti, B, INTERCEPT_REW, TP
+    (D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, RESET, COEF, ETA_COEF, GAM, M, N, J,
+      T, Ti, B, INTERCEPT_REW, learn_rate, cr_reps, reps,
+      sigsq_list) = (hyparams['D'], hyparams['MOVE_NOISE'],
+      hyparams['INTERCEPT_ETA'], hyparams['WEIGHT'], hyparams['RESET'],
+      hyparams['COEF'], hyparams['ETA_COEF'], hyparams['GAM'], hyparams['M'],
+      hyparams['N'], hyparams['J'], hyparams['T'], hyparams['Ti'],
+      hyparams['B'], hyparams['INTERCEPT_REW'], hyparams['learn_rate'],
+      hyparams['cr_reps'], hyparams['reps'], hyparams['sigsq_list'])
+    d = D // 2 + 1
+    state_space = np.array([(i,j) for i in range(D) for j in range(D)])
+    action_space = list(range(4))
+    TP = transition(state_space, action_space)
+    
+    alpha1 = np.array([WEIGHT, 0, 0, 0, 1])
+    alpha2 = np.array([0, 0, WEIGHT, 0, 1])
+    alpha3 = np.array([0, 0, 0, WEIGHT, 1]) 
+    alpha4 = np.array([0, WEIGHT, 0, 0, 1])
+    
+    p = alpha1.shape[0]
+    m = 4
+    
+    ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4])
+    ex_sigsqs = np.array(sigsq_list)
+    
+    init_Q = np.random.rand(D,D,4)
+    
+    for seed in seeds:
+        filename = '_'.join(str(datetime.datetime.now()).split())
+        fname = str(id_num) + '$' + filename.replace(':', '--')
+        os.mkdir('hyp_results/' + fname)
+        
+        SEED_NUM = seed#100#50#80#70#60
+        np.random.seed(SEED_NUM) #50) #40) #30) #20) #10)
+        
+        centers_x = np.random.choice(D, D//2)
+        centers_y = np.random.choice(D, D//2)
+        
+        theta_true = 3*np.random.rand(D // 2 + 1) - 2 #np.random.normal(size = D // 2 + 1, scale=3)
+        rewards = lin_rew_func(theta_true, state_space, centers_x, centers_y)
+        sns.heatmap(rewards)
+        plt.savefig('hyp_results/' + fname + '/' + 'true_reward.png')
+        plt.show()
+        
+        opt_policy, Q = value_iter(state_space, action_space, rewards, TP, GAM, 1e-5)
+        
+        compare_myo_opt(rewards, TP, Q, save=fname)
+        
+        phi = np.random.rand(m,2)
+        alpha = np.random.normal(size=(m,p), scale=0.05)
+        #sigsq = 1e-16 + np.zeros(m)
+        sigsq = np.random.rand(m)
+        beta = np.random.rand(m)
+        theta = np.random.normal(size=d) #np.zeros_like(theta_true)
+        
+        traj_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
+                             TP, m)
+        boltz_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
+                             TP, m, Q)
+        dumb_data = random_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
+                             TP, m)
+        
+        alg_a_str = str(algo_a).split()[1]
+        if random:
+            alg_b_str = 'random'
+        else:
+            alg_b_str = str(algo_b).split()[1]
+        
+        if test_data == 'myo':
+            true_tot, a_tot, b_tot, a_sd, b_sd = evaluate_general(theta, alpha, sigsq, phi, beta, 
+                                                         traj_data,
+              TP, state_space,
+              action_space, B, m, M, Ti, N, learn_rate, reps, opt_policy, T,
+              rewards, init_Q, J, centers_x, centers_y,
+              cr_reps, algo_a, algo_b, random=random,
+              save=['hyp_results/' + fname + '/' + fname,
+                    alg_a_str + '__' + alg_b_str])
+        else:
+            true_tot, a_tot, b_tot, a_sd, b_sd = evaluate_general(theta, alpha, sigsq, phi, beta,
+                                                          boltz_data,
+              TP, state_space,
+              action_space, B, m, M, Ti, N, learn_rate, reps, opt_policy, T,
+              rewards, init_Q, J, centers_x, centers_y,
+              cr_reps, algo_a, algo_b, random=random,
+              save=['hyp_results/' + fname + '/' + fname,
+                    alg_a_str + '__' + alg_b_str])
+            
+        f = open('hyp_results/' + fname + '/' + fname + '.txt', 'w')
+        f.write('D = ' + str(D) + '\n')
+        f.write('MOVE_NOISE = ' + str(MOVE_NOISE) + '\n')
+        f.write('INTERCEPT_ETA = ' + str(INTERCEPT_ETA) + '\n')
+        f.write('INTERCEPT_REW = ' + str(INTERCEPT_REW) + '\n')
+        f.write('WEIGHT = ' + str(WEIGHT) + '\n')
+        f.write('RESET = ' + str(RESET) + '\n')
+        f.write('COEF = ' + str(COEF) + '\n')
+        f.write('GAM = ' + str(GAM) + '\n')
+        f.write('ETA_COEF = ' + str(ETA_COEF) + '\n')
+        f.write('M = ' + str(M) + '\n')
+        f.write('N = ' + str(N) + '\n')
+        f.write('J = ' + str(J) + '\n')
+        f.write('T = ' + str(T) + '\n')
+        f.write('Ti = ' + str(Ti) + '\n')
+        f.write('B = ' + str(B) + '\n')
+        f.write('learn_rate = ' + str(learn_rate) + '\n')
+        f.write('cr_reps = ' + str(cr_reps) + '\n')
+        f.write('reps = ' + str(reps) + '\n')
+        f.write('centers_x = ' + str(centers_x) + '\n')
+        f.write('centers_y = ' + str(centers_y) + '\n')
+        f.write('SEED_NUM = ' + str(SEED_NUM) + '\n')
+        f.write('theta_true = ' + str(theta_true) + '\n')
+        f.write('ex_alphas = ' + str(ex_alphas) + '\n')
+        f.write('ex_sigsqs = ' + str(ex_sigsqs) + '\n')
+        f.write('alpha = ' + str(alpha) + '\n')
+        f.write('sigsq = ' + str(sigsq) + '\n')
+        f.write('theta = ' + str(theta) + '\n')
+        f.write('beta = ' + str(beta) + '\n')
+        f.write('phi = ' + str(phi) + '\n')
+        f.write('test_data = ' + str(test_data) + '\n')
+            
+        f.write('true_tot = ' + str(true_tot) + '\n')
+        f.write('mean algo_a_tot = ' + str(np.mean(a_tot)) + '\n')
+        f.write('sd algo_a_tot = ' + str(a_sd) + '\n')
+        f.write('mean algo_b_tot = ' + str(np.mean(b_tot)) + '\n')
+        f.write('sd algo_b_tot = ' + str(b_sd) + '\n')
+        f.close()
     
 #%%
 
