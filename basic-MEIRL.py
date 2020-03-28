@@ -277,18 +277,22 @@ def expect_reward_all(rewards, TP):
     return TP[grid[1],grid[0]].dot(np.ravel(rewards)).reshape(4,D,D)
 
 
-def compare_myo_opt(rewards, TP, Q, save=False):
+def compare_myo_opt(rewards, TP, Q, save=False, hyp=False):
     '''
     Shows plot of best action with respect to next-step reward vs Q* 
     '''
     er = expect_reward_all(rewards, TP)
     sns.heatmap(np.argmax(er, axis=0))
+    if hyp:
+        res_str = 'hyp_results/'
+    else:
+        res_str = 'results/'
     if save:
-        plt.savefig('results/' + save + '/' + 'best_myo.png')
+        plt.savefig(res_str + save + '/' + 'best_myo.png')
     plt.show()
     sns.heatmap(np.argmax(Q, axis=2))
     if save:
-        plt.savefig('results/' + save + '/' + 'best_Q.png')
+        plt.savefig(res_str + save + '/' + 'best_Q.png')
     plt.show()
     
     
@@ -982,7 +986,7 @@ def evaluate_all(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
       action_space, rewards)
     plt.plot(np.cumsum(true_rew), color='b') 
     true_total = np.sum(true_rew)
-    totals = [[],[], []]
+    totals = [[],[], [], []]
     cols = ['r', 'g', 'k', 'm']
     for j in range(J):
         ta = MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP,
@@ -1227,7 +1231,7 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         opt_policy, Q = value_iter(state_space, action_space, rewards, TP,
           GAM, 1e-5)
         
-        compare_myo_opt(rewards, TP, Q, save=fname)
+        compare_myo_opt(rewards, TP, Q, save=fname, hyp=True)
         
         phi = np.random.rand(m,2)
         alpha = np.random.normal(size=(m,p), scale=0.05)
@@ -1243,11 +1247,6 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         dumb_data = random_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
                              TP, m)
         
-        alg_a_str = str(algo_a).split()[1]
-        if random:
-            alg_b_str = 'random'
-        else:
-            alg_b_str = str(algo_b).split()[1]
         
         if test_data == 'myo':
             (true_tot, a_tot, b_tot, c_tot, d_tot, a_sd, b_sd, c_sd,
@@ -1295,10 +1294,14 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         f.write('test_data = ' + str(test_data) + '\n')
             
         f.write('true_tot = ' + str(true_tot) + '\n')
-        f.write('mean algo_a_tot = ' + str(np.mean(a_tot)) + '\n')
-        f.write('sd algo_a_tot = ' + str(a_sd) + '\n')
-        f.write('mean algo_b_tot = ' + str(np.mean(b_tot)) + '\n')
-        f.write('sd algo_b_tot = ' + str(b_sd) + '\n')
+        f.write('mean MEIRL_det_tot = ' + str(np.mean(a_tot)) + '\n')
+        f.write('sd MEIRL_det_tot = ' + str(a_sd) + '\n')
+        f.write('mean MEIRL_unif_tot = ' + str(np.mean(b_tot)) + '\n')
+        f.write('sd MEIRL_unif_tot = ' + str(b_sd) + '\n')
+        f.write('mean AR_AEVB_tot = ' + str(np.mean(c_tot)) + '\n')
+        f.write('sd AR_AEVB_tot = ' + str(c_sd) + '\n')
+        f.write('mean random_tot = ' + str(np.mean(d_tot)) + '\n')
+        f.write('sd random_tot = ' + str(d_sd) + '\n')
         f.close()
     
 #%%
@@ -1660,7 +1663,12 @@ working on random data
 '''
 
 
+'''
+[need to test all 10 seeds; vary sigsq, ETA_COEF, N?]
 
+RESULTS FROM results_var_hyper:
+1) sigsq varying from 0.01, 0.1, 1, 5
+'''
 
 
 
