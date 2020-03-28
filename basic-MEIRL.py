@@ -1674,12 +1674,21 @@ RESULTS FROM results_var_hyper:
 5) [seed 180] sigsq varying from 0.01, 0.1, 1, 5
 6) [seed 20, boltz] sigsq varying from 0.01, 0.1, 1, 5
 7) [seed 60, boltz] sigsq varying from 0.01, 0.1, 1, 5
+8)
+9)
+10)
+11) [seed 20] ETA_COEF varying from 0.01, 0.05, 0.5
+12) [seed 60] ETA_COEF varying from 0.01, 0.05, 0.5
                  
                  
                  
 ETA_COEF varying from 0.01, 0.05, 0.5
 '''
 
+'''
+Include results from random data and from very high ETA_COEF as evidence that
+the algos aren't cheating
+'''
 
 
 '''
