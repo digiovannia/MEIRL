@@ -1517,6 +1517,8 @@ Future directions:
     k-step rewards...
     * robustness - avoiding cases where the algo hallucinates high pos reward
     in a high NEGATIVE state(s) and anti-optimizes
+    * test on simulations from experts whose beta functions mimick different
+    cognitive biases
 '''
 
 
@@ -1647,14 +1649,6 @@ Maybe also check on junk data less trivial than above - demonstrator equally
 likely to take each action in each state
 
 
-
-
-(*) Testing out hypothesis that the algo is cheating using bases function
-knowledge -- or just doing well because as long as you accidentally find at least one
-high-reward hub you can do well -- by testing it on purely random policy data.
-** Okay, it does much worse than usual on the junk data, but still better 
-than random (+260 out of 1200 vs -30)
-
 Trying on random data when D = 8 makes unif indistinguishable (in total reward)
 from random algo. So I guess this problem scales with D...
 
@@ -1697,9 +1691,15 @@ RESULTS FROM results_var_hyper:
 28) [seed 120, boltz] sigsq varying from 0.01, 0.1, 1, 5
 29) [seed 160, boltz] sigsq varying from 0.01, 0.1, 1, 5
 30) [seed 200, boltz] sigsq varying from 0.01, 0.1, 1, 5
+31) [seed 40] ETA_COEF varying from 0.01, 0.05, 0.5
+32) [seed 80] ETA_COEF varying from 0.01, 0.05, 0.5
+33) [seed 120] ETA_COEF varying from 0.01, 0.05, 0.5
+34)
+35)
                  
                  
-                 
+The difference between 24 and 29 is INCREDIBLE - does much better when data
+are boltz despite not modeling the demonstrators as such                 
                  
                  
                  [seed 20] N varying from 20, 50, 100
