@@ -1679,6 +1679,9 @@ RESULTS FROM results_var_hyper:
 10)
 11) [seed 20] ETA_COEF varying from 0.01, 0.05, 0.5
 12) [seed 60] ETA_COEF varying from 0.01, 0.05, 0.5
+13) [seed 100] ETA_COEF varying from 0.01, 0.05, 0.5
+14) [seed 140] ETA_COEF varying from 0.01, 0.05, 0.5
+
                  
                  
                  
