@@ -15,6 +15,7 @@ Actions: 0 = up, 1 = right, 2 = down, 3 = left
 
 ############################### Helper functions #############################
 
+
 def log_mean_exp(tensor):
     '''
     Avoids overflow in computation of log of a mean of exponentials
@@ -38,7 +39,9 @@ def softmax(v, beta, axis=False):
         z = np.sum(w)
         return w / z
     
+    
 ########################### Grid world functions #############################
+
 
 def manh_dist(p1, p2):
     return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
@@ -89,7 +92,9 @@ def transition(state_space, action_space):
                             TP[s,a,state_index((x2,y2))] += 1 - MOVE_NOISE
     return TP
 
+
 ################# Functions for generating trajectories ######################
+
 
 def grid_step(s, a):
     '''
@@ -197,11 +202,8 @@ def make_data(alpha, sigsq, rewards, N, Ti, state_space, action_space,
     Makes a list of N trajectories based on the given parameters and the
     myopic policy by default, or the Q-value-based policy if Q is provided.
     '''
-    trajectories = [
-        [synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
-                       TP, Q) for i in range(m)]
-        for _ in range(N)
-    ]
+    trajectories = [[synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space,
+      action_space, TP, Q) for i in range(m)] for _ in range(N)]
     return trajectories 
 
 
@@ -232,7 +234,9 @@ def random_data(alpha, sigsq, rewards, N, Ti, state_space, action_space,
     ]
     return trajectories 
 
+
 ####################### Functions for visualizing ############################
+
 
 def visualize_policy(rewards, policy):
     '''
@@ -306,7 +310,9 @@ def see_trajectory(reward_map, state_seq, state_space):
         plt.annotate('*', (s[1]+0.2,s[0]+0.7), color='b', size=24)
         plt.show()
 
+
 ################################ Model functions #############################
+
 
 def psi_all_states(state_space, centers_x, centers_y):
     '''
@@ -399,7 +405,9 @@ def y_t_nest(phi, phi_m, theta, theta_m, alpha, alpha_m, sigsq, sigsq_m, t):
             alpha - const*(alpha - alpha_m),
             sigsq - const*(sigsq - sigsq_m))
 
+
 ############################# Full AEVB models ###############################
+
 
 def grad_terms(normals, phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m):
     '''
@@ -407,11 +415,11 @@ def grad_terms(normals, phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m):
     '''
     denom = sigsq + phi[:,1]
     sc_normals = (denom**(1/2))[:,None,None]*normals
-    aE = np.einsum('ij,ijk->ik', alpha, E_all) #faster than tensordot
+    aE = np.einsum('ij,ijk->ik', alpha, E_all)
     mn = sigsq[:,None]*R_all + phi[:,0][:,None]*np.ones((m,Ti))
     meanvec = sc_normals + (aE + mn)[:,None,:]
     gvec = sc_normals + mn[:,None,:]
-    gnorm = np.einsum('ijk,ijk->ij', gvec, gvec) #faster than tensordot, but still p slow
+    gnorm = np.einsum('ijk,ijk->ij', gvec, gvec)
     return meanvec, denom, gvec, gnorm
 
 
@@ -515,90 +523,13 @@ def logZ(sigsq, normals, meanvec, denom, impa, reward_est, data, M, TP, R_all,
     return logZvec, gZ_theta, gZ_alpha, gZ_sigsq, gZ_phi
 
 
-def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
-         plot=True):
-    impa = list(np.random.choice(action_space, M))
-    elbos = []
-    phi_m = np.zeros_like(phi)
-    theta_m = np.zeros_like(theta)
-    alpha_m = np.zeros_like(alpha)
-    sigsq_m = np.zeros_like(sigsq)
-    y_phi = phi.copy()
-    y_theta = theta.copy()
-    y_alpha = alpha.copy()
-    y_sigsq = sigsq.copy()
-    best = -np.inf
-    best_phi = phi_m.copy()
-    best_theta = theta_m.copy()
-    best_alpha = alpha_m.copy()
-    best_sigsq = sigsq_m.copy()
-    tm = 1
-    normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m, B))
-    for _ in range(reps):
-        permut = list(np.random.permutation(range(N)))
-        for n in permut:
-            t = 1/2*(1 + np.sqrt(1 + 4*tm**2))
-            
-            data = np.array(traj_data[n])
-            reward_est = lin_rew_func(y_theta, state_space, centers_x,
-              centers_y)
-            R_all, E_all = RE_all(reward_est, data, TP, state_space, m,
-              centers_x, centers_y)
-            meanvec, denom, gvec, gnorm = grad_terms(normals,
-              y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
-            logZvec, gZ_theta, gZ_alpha, gZ_sigsq, gZ_phi = logZ(y_sigsq,
-              normals, meanvec, denom, impa, reward_est, data, M, TP, R_all,
-              E_all, action_space, centers_x, centers_y, state_space, m, Ti)
-          
-            logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m,
-              normals, R_all, logZvec, meanvec, denom)
-            elbos.append(logprobdiff)
-            
-            if logprobdiff > best:
-                best = logprobdiff
-                best_phi = y_phi.copy()
-                best_theta = y_theta.copy()
-                best_alpha = y_alpha.copy()
-                best_sigsq = y_sigsq.copy()
-              
-            g_phi = phi_grad_ae(y_phi, m, Ti, normals, denom, y_sigsq, gZ_phi)
-            g_theta = theta_grad_ae(gZ_theta, data, state_space, R_all, E_all,
-              y_sigsq, y_alpha, centers_x, centers_y)
-            g_alpha = alpha_grad_ae(gZ_alpha, E_all, R_all)
-            g_sigsq = sigsq_grad_ae(gZ_sigsq, normals, Ti, y_sigsq, gnorm,
-              denom, R_all, gvec)
-            
-            g_phi = g_phi / np.linalg.norm(g_phi)
-            g_theta = g_theta / np.linalg.norm(g_theta)
-            g_alpha = g_alpha / np.linalg.norm(g_alpha, 'f')
-            g_sigsq = g_sigsq / np.linalg.norm(g_sigsq)
-          
-            phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
-            phi, theta, alpha, sigsq = GD(y_phi, y_theta, y_alpha, y_sigsq,
-              g_phi, g_theta, g_alpha, g_sigsq, learn_rate)
-            
-            mult = (tm - 1)/t
-            y_phi = phi + mult*(phi - phi_m)
-            y_theta = theta + mult*(theta - theta_m)
-            #y_alpha = alpha + mult*(alpha - alpha_m)
-            y_alpha = np.maximum(alpha + mult*(alpha - alpha_m), 0)
-            y_sigsq = sigsq + mult*(sigsq - sigsq_m)
-            
-            learn_rate *= 0.99
-            tm = t
-    if plot:
-        plt.plot(elbos)
-    return best_theta, best_phi, best_alpha, best_sigsq
-
-
 def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
-         plot=True):
+         plot=False):
     '''
     Autoencoder algorithm with adaptive restart and Nesterov acceleration
     '''
-    impa = list(np.random.choice(action_space, M))
+    impa = list(np.random.choice(action_space, M)) # uniformly sampled actions
     elbos = []
     phi_m = np.zeros_like(phi)
     theta_m = np.zeros_like(theta)
@@ -608,16 +539,17 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     y_theta = theta.copy()
     y_alpha = alpha.copy()
     y_sigsq = sigsq.copy()
+    # saving the best-performing parameters
     best = -np.inf
     best_phi = phi_m.copy()
     best_theta = theta_m.copy()
     best_alpha = alpha_m.copy()
     best_sigsq = sigsq_m.copy()
-    tm = 1
-    last_lpd = -np.inf
+    tm = 1 # Nesterov acceleration hyperparameter
+    last_lpd = -np.inf # saving last objective value for adaptive restart
     normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m, B))
     for _ in range(reps):
-        permut = list(np.random.permutation(range(N)))
+        permut = list(np.random.permutation(range(N))) # shuffling data
         for n in permut:
             t = 1/2*(1 + np.sqrt(1 + 4*tm**2))
             
@@ -650,6 +582,7 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             g_sigsq = sigsq_grad_ae(gZ_sigsq, normals, Ti, y_sigsq, gnorm,
               denom, R_all, gvec)
             
+            # gradient clipping
             g_phi = g_phi / np.linalg.norm(g_phi)
             g_theta = g_theta / np.linalg.norm(g_theta)
             g_alpha = g_alpha / np.linalg.norm(g_alpha, 'f')
@@ -659,17 +592,18 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             phi, theta, alpha, sigsq = GD(y_phi, y_theta, y_alpha, y_sigsq,
               g_phi, g_theta, g_alpha, g_sigsq, learn_rate)
             
+            # Nesterov intermediate iterates
             mult = (tm - 1)/t
             y_phi = phi + mult*(phi - phi_m)
             y_phi[:,1] = np.maximum(y_phi[:,1], 0.01)
             y_theta = theta + mult*(theta - theta_m)
-            #y_alpha = alpha + mult*(alpha - alpha_m)
             y_alpha = np.maximum(alpha + mult*(alpha - alpha_m), 0)
             y_sigsq = np.maximum(sigsq + mult*(sigsq - sigsq_m), 0.01)
             
             learn_rate *= 0.99
             tm = t
             
+            # adaptive restart
             if logprobdiff < last_lpd:
                 y_phi = phi.copy()
                 y_theta = theta.copy()
@@ -678,15 +612,13 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                 tm = 1
                 
             last_lpd = logprobdiff
-            #sns.heatmap(lin_rew_func(theta, state_space, centers_x, centers_y))
-            #plt.show()
     if plot:
         plt.plot(elbos)
     return best_theta, best_phi, best_alpha, best_sigsq
 
 
-
 ############################ Uniform beta model ##############################
+
 
 def beta_grad_unif(gZ_beta, R_all):
     return -gZ_beta + R_all.sum(axis=1)
@@ -723,15 +655,9 @@ def logZ_unif(beta, impa, reward_est, data, M, TP, state_space, action_space,
     return logZvec, gZ_theta, gZ_beta
 
 
-def GD_unif(theta, beta, g_theta, g_beta, learn_rate):
-    theta = theta + learn_rate*g_theta
-    beta = beta + learn_rate*g_beta
-    return theta, beta
-
-
 def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
-         plot=True):
+         plot=False):
     impa = list(np.random.choice(action_space, M))
     lik = []
     theta_m = np.zeros_like(theta)
@@ -773,7 +699,7 @@ def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             g_theta = g_theta / np.linalg.norm(g_theta)
             g_beta = g_beta / np.linalg.norm(g_beta)
           
-            theta_m, beta_m, = theta, beta
+            theta_m, beta_m = theta, beta
             theta = y_theta + learn_rate*g_theta
             beta = y_beta + learn_rate*g_beta
             
@@ -840,9 +766,9 @@ def loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec, unif=False):
         return -logZvec + logT + np.einsum('ij,ij->i', beta, R_all)
 
 
-def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
+def MEIRL_det(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
-         plot=True):
+         plot=False):
     impa = list(np.random.choice(action_space, M))
     lik = []
     theta_m = np.zeros_like(theta)
@@ -872,7 +798,6 @@ def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
           
             loglikelihood = loglik(state_space, Ti, beta, data, TP, m, R_all,
               logZvec).sum()
-            # appears not to be maximized at true theta/alpha, why?
             lik.append(loglikelihood)
             
             if loglikelihood > best:
@@ -911,7 +836,7 @@ def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
 
 def random_algo(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
-         plot=True):
+         plot=False):
     return (np.random.normal(size=theta.shape), 0)
 
 
@@ -951,13 +876,13 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     for j in range(J):
         ta = algo_a(theta, alpha, sigsq, phi, beta, traj_data, TP,
           state_space, action_space, B, m, M, Ti, N, learn_rate, reps, centers_x,
-          centers_y, plot=False)[0]
+          centers_y)[0]
         if random:
             tb = np.random.normal(size=theta.shape)
         else:
             tb = algo_b(theta, alpha, sigsq, phi, beta,
               traj_data, TP, state_space, action_space, B, m, M, Ti, N, learn_rate,
-              reps, centers_x, centers_y, plot=False)[0]
+              reps, centers_x, centers_y)[0]
         theta_stars = [ta, tb]
         for i in range(2):
             reward_est = lin_rew_func(theta_stars[i], state_space, centers_x,
@@ -989,18 +914,18 @@ def evaluate_all(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     totals = [[],[], [], []]
     cols = ['r', 'g', 'k', 'm']
     for j in range(J):
-        ta = MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP,
+        ta = MEIRL_det(theta, alpha, sigsq, phi, beta, traj_data, TP,
           state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
-          centers_x, centers_y, plot=False)[0]
+          centers_x, centers_y)[0]
         tb = MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP,
           state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
-          centers_x, centers_y, plot=False)[0]
+          centers_x, centers_y)[0]
         tc = AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP,
           state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
-          centers_x, centers_y, plot=False)[0]
+          centers_x, centers_y)[0]
         td = random_algo(theta, alpha, sigsq, phi, beta, traj_data, TP,
           state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
-          centers_x, centers_y, plot=False)[0]
+          centers_x, centers_y)[0]
         theta_stars = [ta, tb, tc, td]
         for i in range(4):
             reward_est = lin_rew_func(theta_stars[i], state_space, centers_x,
@@ -1355,7 +1280,7 @@ theta_star, phi_star, alpha_star, sigsq_star = ann_AEVB(theta, alpha, sigsq, phi
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
 theta_star_2, phi_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-theta_star_p, alpha_star_p = MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
+theta_star_p, alpha_star_p = MEIRL_det(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
 theta_star_AR, phi_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha,
   sigsq, phi, beta, traj_data, TP, state_space, action_space, B, m, M, Ti, N,
@@ -1378,14 +1303,14 @@ sigsq of 0.5 --> unif does terrible on non-sparse, hallucinates high reward
 in a corner consistently...
 '''
 # these all seem to do terribly on seed 10, except when sigsq is 0.01 rather than 2 -
-# then MEIRL_det_pos works quite well 
+# then MEIRL_det works quite well 
 
 #boltz - FIX THIS
 phi_star_b, theta_star_b, alpha_star_b, sigsq_star_b = ann_AEVB(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
 phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-theta_star_p, alpha_star_p = MEIRL_det_pos(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
+theta_star_p, alpha_star_p = MEIRL_det(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
 phi_star_AR, theta_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
@@ -1399,9 +1324,6 @@ dumb_data = make_data(alpha_star_2, sigsq_star_2, lin_rew_func(theta_star_2,
                             TP, m)
 
 #sns.heatmap(lin_rew_func(theta_true, state_space, centers_x, centers_y))
-
-theta_s, beta_s = MEIRL_unif(theta, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, 1, GD_unif, centers_x, centers_y)
 
 '''
 ^ results from this, ****SEED 10****:
@@ -1588,10 +1510,10 @@ Added gradient clipping to all algos for >= 23!
 ### others
 
 100) meirl_unif vs random  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1
-101) meirl_det_pos vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1
-102) meirl_det_pos vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_2
-103) meirl_det_pos vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1; boltz
-104) meirl_det_pos vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_2; boltz
+101) meirl_det vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1
+102) meirl_det vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_2
+103) meirl_det vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1; boltz
+104) meirl_det vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_2; boltz
 105) AR_AEVB vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1
 
 
@@ -1604,40 +1526,36 @@ Added gradient clipping to all algos for >= 23!
     
 **********(NOTE: MAY NEED TO REDO EVERYTHING UNDER #100)***************
     
-    * det_pos vs random; sigsq = 1.5
-    * det_pos vs unif; sigsq = 1.5; ETA_COEF = 5
+    * det vs random; sigsq = 1.5
+    * det vs unif; sigsq = 1.5; ETA_COEF = 5
      - mostly sucks, but this isn't surprising bc noise drowns it out; this is
      good, means unif isn't cheating
-    * det_pos vs AR_AEVB; sigsq = 0.8 - both suck but AEVB sometimes does well
-    * det_pos vs AR_AEVB; sigsq = 0.1 - det consistently sucks here
-    * det_pos vs AR_AEVB; sigsq = 0.01 - still det sucks, weird, it used to work
-    * det_pos vs AR_AEVB; sigsq = 0.01, learn_rate = 0.0001 - barely changes from
+    * det vs AR_AEVB; sigsq = 0.8 - both suck but AEVB sometimes does well
+    * det vs AR_AEVB; sigsq = 0.1 - det consistently sucks here
+    * det vs AR_AEVB; sigsq = 0.01 - still det sucks, weird, it used to work
+    * det vs AR_AEVB; sigsq = 0.01, learn_rate = 0.0001 - barely changes from
     init_theta so both are consistently bad
     
-    * det_pos vs AR_AEVB; sigsq = 0.01; learn_rate = 0.1; init sigsq = 0;
+    * det vs AR_AEVB; sigsq = 0.01; learn_rate = 0.1; init sigsq = 0;
     N = 500 - now AEVB seems to do much better on all seeds; but det
     does a bit worse;
     * AR_AEVB vs random; sigsq = 0.01; learn_rate = 0.1; init sigsq = 1e-16; N = 2000:
         extra samples don't help, in fact does worse than with N = 500
     * unif vs random; sigsq = 2; init sigsq = 1e-16; ETA_COEF = 5 -- there should
     be basically no signal for the algorithm to learn from here...
-    * det_pos vs unif; sigsq = 2; ETA_COEF = 5; sigsq init 1e-16 -- much better
+    * det vs unif; sigsq = 2; ETA_COEF = 5; sigsq init 1e-16 -- much better
     results than the second bullet; I guess initialization responsible, but this
     is still such a drastic change for one difference (which pushes back every
     other random draw)
       - how on earth is this going so well, when ETA_COEF is so high (and hence
       signal should be drowned out)?
-    * det_pos vs unif; sigsq = 1.5; ETA_COEF = 0.01 - so now there's at least
+    * det vs unif; sigsq = 1.5; ETA_COEF = 0.01 - so now there's at least
     some signal, but large sigsq still may be an issue
       - Interestingly, they both do quite well, though det occasionally anti-optimizes.
       It seems the algorithms are able to recover the signal amid strong noise in
       sampling of beta, but not so much a complete lack of expertise
     * same as above but now on BOLTZ data:
       - det does worse but still better than random, unif does *better*...
-    
-Turns out the reason det pos was working before was that sigsq was initialized
-to correct...
-* Or not? Does quite well in case where init sigsq is 1e-16 but true is 1.5
 
 
 
@@ -1668,7 +1586,7 @@ RESULTS FROM results_var_hyper:
 5) [seed 180] sigsq varying from 0.01, 0.1, 1, 5
 6) [seed 20, boltz] sigsq varying from 0.01, 0.1, 1, 5
 7) [seed 60, boltz] sigsq varying from 0.01, 0.1, 1, 5
-8)
+8) [seed 100, boltz] sigsq varying from 0.01, 0.1, 1, 5
 9)
 10)
 11) [seed 20] ETA_COEF varying from 0.01, 0.05, 0.5
@@ -1694,8 +1612,14 @@ RESULTS FROM results_var_hyper:
 31) [seed 40] ETA_COEF varying from 0.01, 0.05, 0.5
 32) [seed 80] ETA_COEF varying from 0.01, 0.05, 0.5
 33) [seed 120] ETA_COEF varying from 0.01, 0.05, 0.5
-34)
-35)
+34) [seed 160] ETA_COEF varying from 0.01, 0.05, 0.5
+35) [seed 200] ETA_COEF varying from 0.01, 0.05, 0.5
+36)
+37)
+38)
+39)
+40)
+41) [seed 20] N varying from 20, 50, 100
                  
                  
 The difference between 24 and 29 is INCREDIBLE - does much better when data
