@@ -1228,7 +1228,9 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         f.write('mean random_tot = ' + str(np.mean(d_tot)) + '\n')
         f.write('sd random_tot = ' + str(d_sd) + '\n')
         f.close()
-    
+
+
+
 #%%
 
 '''
@@ -1574,6 +1576,25 @@ Switched to uniform distribution to generate theta and now it's finally not
 working on random data
 '''
 
+def summary():
+    '''
+    Using results from results_var_hyper, generates summary data and plots for:
+    1) X = sigsq, Y = averages over all MDPs [myo and boltz]
+    2) X = ETA, Y = ditto
+    3) For each MDP: averages over hyperparams
+    4
+    '''
+    res_folds = os.listdir('hyp_results')
+    seeds = {}
+    for i in range(5):
+        seeds[20+40*i] = [(i+1) + 5*j for j in range(4)]
+        seeds[40+40*i] = [(i+21) + 5*j for j in range(4)]
+    # seed 20 = 1, 6, 11, 16
+    # seed 60 = 2, 7, 12, 17
+    # ...
+    # seed 40 = 21, 26, 31, 36
+    # seed 80 = 22, 27, 32, 37
+    # ...
 
 '''
 [need to test all 10 seeds; vary sigsq, ETA_COEF, N?]
@@ -1587,18 +1608,18 @@ RESULTS FROM results_var_hyper:
 6) [seed 20, boltz] sigsq varying from 0.01, 0.1, 1, 5
 7) [seed 60, boltz] sigsq varying from 0.01, 0.1, 1, 5
 8) [seed 100, boltz] sigsq varying from 0.01, 0.1, 1, 5
-9)
-10)
+9) [seed 140, boltz] sigsq varying from 0.01, 0.1, 1, 5
+10) [seed 180, boltz] sigsq varying from 0.01, 0.1, 1, 5
 11) [seed 20] ETA_COEF varying from 0.01, 0.05, 0.5
 12) [seed 60] ETA_COEF varying from 0.01, 0.05, 0.5
 13) [seed 100] ETA_COEF varying from 0.01, 0.05, 0.5
 14) [seed 140] ETA_COEF varying from 0.01, 0.05, 0.5
 15) [seed 180] ETA_COEF varying from 0.01, 0.05, 0.5
-16) 
-17)
-18)
-19)
-20)
+16) [seed 20, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
+17) [seed 60, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
+18) [seed 100, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
+19) [seed 140, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
+20) [seed 180, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
 21) [seed 40] sigsq varying from 0.01, 0.1, 1, 5 -- boltz comparison?
 22) [seed 80] sigsq varying from 0.01, 0.1, 1, 5
 23) [seed 120] sigsq varying from 0.01, 0.1, 1, 5
@@ -1614,12 +1635,26 @@ RESULTS FROM results_var_hyper:
 33) [seed 120] ETA_COEF varying from 0.01, 0.05, 0.5
 34) [seed 160] ETA_COEF varying from 0.01, 0.05, 0.5
 35) [seed 200] ETA_COEF varying from 0.01, 0.05, 0.5
-36)
-37)
-38)
-39)
-40)
+36) [seed 40, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
+37) [seed 80, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
+38) [seed 120, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
+39) [seed 160, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
+40) [seed 200, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
 41) [seed 20] N varying from 20, 50, 100
+42) [seed 60] N var from 20, 50, 100
+43)
+44)
+45)
+46)
+47)
+48)
+49)
+50)
+
+
+
+
+
                  
                  
 The difference between 24 and 29 is INCREDIBLE - does much better when data
