@@ -1042,7 +1042,7 @@ HYPARAMS = {'D': 16,
             'learn_rate': 0.5,
             'cr_reps': 10,
             'reps': 5,
-            'sigsq_list': [0.1, 0.1, 0.1, 0.1]} #[1.5,1.5,1.5,1.5]}
+            'sigsq_list': [0.1, 0.1, 0.1, 0.1]}
 
 def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
                  test_data='myo', seeds=seeds_1, hyparams=HYPARAMS):
@@ -1681,6 +1681,20 @@ RESULTS FROM results_var_hyper:
 12) [seed 60] ETA_COEF varying from 0.01, 0.05, 0.5
 13) [seed 100] ETA_COEF varying from 0.01, 0.05, 0.5
 14) [seed 140] ETA_COEF varying from 0.01, 0.05, 0.5
+15) [seed 180] ETA_COEF varying from 0.01, 0.05, 0.5
+16) 
+17)
+18)
+19)
+20)
+21) [seed 40] sigsq varying from 0.01, 0.1, 1, 5 -- boltz comparison?
+21) [seed 80] sigsq varying from 0.01, 0.1, 1, 5
+                 
+                 
+                 
+                 
+                 
+                 [seed 20] N varying from 20, 50, 100
 
                  
                  
