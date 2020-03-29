@@ -514,11 +514,11 @@ def logZ(sigsq, normals, meanvec, denom, impa, reward_est, data, M, TP, R_all,
 
 def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
-         plot=True):
+         plot=False):
     '''
     Autoencoder algorithm with adaptive restart and Nesterov acceleration
     '''
-    impa = list(np.random.choice(action_space, M))
+    impa = list(np.random.choice(action_space, M)) # uniformly sampled actions
     elbos = []
     phi_m = np.zeros_like(phi)
     theta_m = np.zeros_like(theta)
@@ -528,16 +528,17 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     y_theta = theta.copy()
     y_alpha = alpha.copy()
     y_sigsq = sigsq.copy()
+    # saving the best-performing parameters
     best = -np.inf
     best_phi = phi_m.copy()
     best_theta = theta_m.copy()
     best_alpha = alpha_m.copy()
     best_sigsq = sigsq_m.copy()
-    tm = 1
-    last_lpd = -np.inf
+    tm = 1 # Nesterov acceleration hyperparameter
+    last_lpd = -np.inf # saving last objective value for adaptive restart
     normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m, B))
     for _ in range(reps):
-        permut = list(np.random.permutation(range(N)))
+        permut = list(np.random.permutation(range(N))) # shuffling data
         for n in permut:
             t = 1/2*(1 + np.sqrt(1 + 4*tm**2))
             
@@ -570,6 +571,7 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             g_sigsq = sigsq_grad_ae(gZ_sigsq, normals, Ti, y_sigsq, gnorm,
               denom, R_all, gvec)
             
+            # gradient clipping
             g_phi = g_phi / np.linalg.norm(g_phi)
             g_theta = g_theta / np.linalg.norm(g_theta)
             g_alpha = g_alpha / np.linalg.norm(g_alpha, 'f')
@@ -583,7 +585,6 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             y_phi = phi + mult*(phi - phi_m)
             y_phi[:,1] = np.maximum(y_phi[:,1], 0.01)
             y_theta = theta + mult*(theta - theta_m)
-            #y_alpha = alpha + mult*(alpha - alpha_m)
             y_alpha = np.maximum(alpha + mult*(alpha - alpha_m), 0)
             y_sigsq = np.maximum(sigsq + mult*(sigsq - sigsq_m), 0.01)
             
@@ -598,8 +599,6 @@ def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                 tm = 1
                 
             last_lpd = logprobdiff
-            #sns.heatmap(lin_rew_func(theta, state_space, centers_x, centers_y))
-            #plt.show()
     if plot:
         plt.plot(elbos)
     return best_theta, best_phi, best_alpha, best_sigsq
@@ -651,7 +650,7 @@ def GD_unif(theta, beta, g_theta, g_beta, learn_rate):
 
 def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
-         plot=True):
+         plot=False):
     impa = list(np.random.choice(action_space, M))
     lik = []
     theta_m = np.zeros_like(theta)
@@ -762,7 +761,7 @@ def loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec, unif=False):
 
 def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
-         plot=True):
+         plot=False):
     impa = list(np.random.choice(action_space, M))
     lik = []
     theta_m = np.zeros_like(theta)
@@ -831,7 +830,7 @@ def MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
 
 def random_algo(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
-         plot=True):
+         plot=False):
     return (np.random.normal(size=theta.shape), 0)
 
 
@@ -871,13 +870,13 @@ def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     for j in range(J):
         ta = algo_a(theta, alpha, sigsq, phi, beta, traj_data, TP,
           state_space, action_space, B, m, M, Ti, N, learn_rate, reps, centers_x,
-          centers_y, plot=False)[0]
+          centers_y)[0]
         if random:
             tb = np.random.normal(size=theta.shape)
         else:
             tb = algo_b(theta, alpha, sigsq, phi, beta,
               traj_data, TP, state_space, action_space, B, m, M, Ti, N, learn_rate,
-              reps, centers_x, centers_y, plot=False)[0]
+              reps, centers_x, centers_y)[0]
         theta_stars = [ta, tb]
         for i in range(2):
             reward_est = lin_rew_func(theta_stars[i], state_space, centers_x,
@@ -911,16 +910,16 @@ def evaluate_all(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     for j in range(J):
         ta = MEIRL_det_pos(theta, alpha, sigsq, phi, beta, traj_data, TP,
           state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
-          centers_x, centers_y, plot=False)[0]
+          centers_x, centers_y)[0]
         tb = MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP,
           state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
-          centers_x, centers_y, plot=False)[0]
+          centers_x, centers_y)[0]
         tc = AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP,
           state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
-          centers_x, centers_y, plot=False)[0]
+          centers_x, centers_y)[0]
         td = random_algo(theta, alpha, sigsq, phi, beta, traj_data, TP,
           state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
-          centers_x, centers_y, plot=False)[0]
+          centers_x, centers_y)[0]
         theta_stars = [ta, tb, tc, td]
         for i in range(4):
             reward_est = lin_rew_func(theta_stars[i], state_space, centers_x,
