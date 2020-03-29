@@ -197,11 +197,8 @@ def make_data(alpha, sigsq, rewards, N, Ti, state_space, action_space,
     Makes a list of N trajectories based on the given parameters and the
     myopic policy by default, or the Q-value-based policy if Q is provided.
     '''
-    trajectories = [
-        [synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
-                       TP, Q) for i in range(m)]
-        for _ in range(N)
-    ]
+    trajectories = [[synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space,
+      action_space, TP, Q) for i in range(m)] for _ in range(N)]
     return trajectories 
 
 
@@ -407,11 +404,11 @@ def grad_terms(normals, phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m):
     '''
     denom = sigsq + phi[:,1]
     sc_normals = (denom**(1/2))[:,None,None]*normals
-    aE = np.einsum('ij,ijk->ik', alpha, E_all) #faster than tensordot
+    aE = np.einsum('ij,ijk->ik', alpha, E_all)
     mn = sigsq[:,None]*R_all + phi[:,0][:,None]*np.ones((m,Ti))
     meanvec = sc_normals + (aE + mn)[:,None,:]
     gvec = sc_normals + mn[:,None,:]
-    gnorm = np.einsum('ijk,ijk->ij', gvec, gvec) #faster than tensordot, but still p slow
+    gnorm = np.einsum('ijk,ijk->ij', gvec, gvec)
     return meanvec, denom, gvec, gnorm
 
 
@@ -513,83 +510,6 @@ def logZ(sigsq, normals, meanvec, denom, impa, reward_est, data, M, TP, R_all,
     gZ_phi = np.array([(num_p1.sum(axis=2)/den).sum(axis=2),
       (num_p2.sum(axis=2)/den).sum(axis=2)])
     return logZvec, gZ_theta, gZ_alpha, gZ_sigsq, gZ_phi
-
-
-def AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
-         plot=True):
-    impa = list(np.random.choice(action_space, M))
-    elbos = []
-    phi_m = np.zeros_like(phi)
-    theta_m = np.zeros_like(theta)
-    alpha_m = np.zeros_like(alpha)
-    sigsq_m = np.zeros_like(sigsq)
-    y_phi = phi.copy()
-    y_theta = theta.copy()
-    y_alpha = alpha.copy()
-    y_sigsq = sigsq.copy()
-    best = -np.inf
-    best_phi = phi_m.copy()
-    best_theta = theta_m.copy()
-    best_alpha = alpha_m.copy()
-    best_sigsq = sigsq_m.copy()
-    tm = 1
-    normals = np.random.multivariate_normal(np.zeros(Ti), np.eye(Ti), (m, B))
-    for _ in range(reps):
-        permut = list(np.random.permutation(range(N)))
-        for n in permut:
-            t = 1/2*(1 + np.sqrt(1 + 4*tm**2))
-            
-            data = np.array(traj_data[n])
-            reward_est = lin_rew_func(y_theta, state_space, centers_x,
-              centers_y)
-            R_all, E_all = RE_all(reward_est, data, TP, state_space, m,
-              centers_x, centers_y)
-            meanvec, denom, gvec, gnorm = grad_terms(normals,
-              y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
-            logZvec, gZ_theta, gZ_alpha, gZ_sigsq, gZ_phi = logZ(y_sigsq,
-              normals, meanvec, denom, impa, reward_est, data, M, TP, R_all,
-              E_all, action_space, centers_x, centers_y, state_space, m, Ti)
-          
-            logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m,
-              normals, R_all, logZvec, meanvec, denom)
-            elbos.append(logprobdiff)
-            
-            if logprobdiff > best:
-                best = logprobdiff
-                best_phi = y_phi.copy()
-                best_theta = y_theta.copy()
-                best_alpha = y_alpha.copy()
-                best_sigsq = y_sigsq.copy()
-              
-            g_phi = phi_grad_ae(y_phi, m, Ti, normals, denom, y_sigsq, gZ_phi)
-            g_theta = theta_grad_ae(gZ_theta, data, state_space, R_all, E_all,
-              y_sigsq, y_alpha, centers_x, centers_y)
-            g_alpha = alpha_grad_ae(gZ_alpha, E_all, R_all)
-            g_sigsq = sigsq_grad_ae(gZ_sigsq, normals, Ti, y_sigsq, gnorm,
-              denom, R_all, gvec)
-            
-            g_phi = g_phi / np.linalg.norm(g_phi)
-            g_theta = g_theta / np.linalg.norm(g_theta)
-            g_alpha = g_alpha / np.linalg.norm(g_alpha, 'f')
-            g_sigsq = g_sigsq / np.linalg.norm(g_sigsq)
-          
-            phi_m, theta_m, alpha_m, sigsq_m = phi, theta, alpha, sigsq
-            phi, theta, alpha, sigsq = GD(y_phi, y_theta, y_alpha, y_sigsq,
-              g_phi, g_theta, g_alpha, g_sigsq, learn_rate)
-            
-            mult = (tm - 1)/t
-            y_phi = phi + mult*(phi - phi_m)
-            y_theta = theta + mult*(theta - theta_m)
-            #y_alpha = alpha + mult*(alpha - alpha_m)
-            y_alpha = np.maximum(alpha + mult*(alpha - alpha_m), 0)
-            y_sigsq = sigsq + mult*(sigsq - sigsq_m)
-            
-            learn_rate *= 0.99
-            tm = t
-    if plot:
-        plt.plot(elbos)
-    return best_theta, best_phi, best_alpha, best_sigsq
 
 
 def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
@@ -1634,10 +1554,6 @@ Added gradient clipping to all algos for >= 23!
       sampling of beta, but not so much a complete lack of expertise
     * same as above but now on BOLTZ data:
       - det does worse but still better than random, unif does *better*...
-    
-Turns out the reason det pos was working before was that sigsq was initialized
-to correct...
-* Or not? Does quite well in case where init sigsq is 1e-16 but true is 1.5
 
 
 
@@ -1694,8 +1610,9 @@ RESULTS FROM results_var_hyper:
 31) [seed 40] ETA_COEF varying from 0.01, 0.05, 0.5
 32) [seed 80] ETA_COEF varying from 0.01, 0.05, 0.5
 33) [seed 120] ETA_COEF varying from 0.01, 0.05, 0.5
-34)
-35)
+34) [seed 160] ETA_COEF varying from 0.01, 0.05, 0.5
+35) [seed 200] ETA_COEF varying from 0.01, 0.05, 0.5
+36)
                  
                  
 The difference between 24 and 29 is INCREDIBLE - does much better when data
