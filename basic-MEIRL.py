@@ -1688,7 +1688,15 @@ RESULTS FROM results_var_hyper:
 19)
 20)
 21) [seed 40] sigsq varying from 0.01, 0.1, 1, 5 -- boltz comparison?
-21) [seed 80] sigsq varying from 0.01, 0.1, 1, 5
+22) [seed 80] sigsq varying from 0.01, 0.1, 1, 5
+23) [seed 120] sigsq varying from 0.01, 0.1, 1, 5
+24) [seed 160] sigsq varying from 0.01, 0.1, 1, 5
+25) [seed 200] sigsq varying from 0.01, 0.1, 1, 5
+26) [seed 40, boltz] sigsq varying from 0.01, 0.1, 1, 5
+27) [seed 80, boltz] sigsq varying from 0.01, 0.1, 1, 5
+28) [seed 120, boltz] sigsq varying from 0.01, 0.1, 1, 5
+29) [seed 160, boltz] sigsq varying from 0.01, 0.1, 1, 5
+30) [seed 200, boltz] sigsq varying from 0.01, 0.1, 1, 5
                  
                  
                  
@@ -1705,6 +1713,7 @@ ETA_COEF varying from 0.01, 0.05, 0.5
 '''
 Include results from random data and from very high ETA_COEF as evidence that
 the algos aren't cheating
+-- ETA_COEF=0.5 results confirm this
 '''
 
 
