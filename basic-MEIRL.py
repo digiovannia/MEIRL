@@ -1,6 +1,7 @@
 import numpy as np 
 import matplotlib.pyplot as plt
 import seaborn as sns
+import pandas as pd
 import datetime
 import os
 import re
@@ -1610,23 +1611,7 @@ def summary():
     3) For each MDP: averages over hyperparams
     4
     '''
-    res_folds = os.listdir('hyp_results')
-    seeds = {}
-    for i in range(5):
-        seeds[20+40*i] = [(i+1) + 5*j for j in range(4)]
-        seeds[40+40*i] = [(i+21) + 5*j for j in range(4)]
-    res_dict = {'sig_myo': list(range(1,6)) + list(range(21,26)),
-                'sig_boltz': list(range(6,11)) + list(range(26,31)),
-                'eta_myo': list(range(11,16)) + list(range(31,36)),
-                'eta_boltz': list(range(16,21)) + list(range(36,41)),
-                'N_myo': list(range(41,46)) + list(range(51,56)),
-                'N_boltz': list(range(46,51)) + list(range(56,61))
-                }
-    # plotting sigsq = 0.01 results for all seeds, reg vs boltz
-    res = {}
-    for cat, nums in res_dict.items():
-        res[cat] = [fo for fo in res_folds if re.match(dict_match(nums), fo)]
-    pass
+    res_folds = [fo for fo in os.listdir('hyp_results') if re.match('.*\$', fo)]
 
     dfdict = {'ETA_COEF': [], 'N': [], 'ex_sigsqs': [], 'SEED_NUM': [],
               'test_data': [], 'true_tot': [], 'mean MEIRL_det_tot': [],
@@ -1637,28 +1622,36 @@ def summary():
     
     for fo in res_folds:
         direc = 'hyp_results/' + fo
-        textfile = sorted(os.listdir(direc))[0]
-        with open(direc + '/' + textfile) as f:
-            for line in f:
-                if '=' in line:
-                    key = line[0:(line.find('=')-1)]
-                    if key in dfdict.keys():
-                        val = line[(line.find('=')+2):(len(line)-1)]
-                        if key == 'ex_sigsqs':
-                            dfdict[key].append(val[1:val.find(' ')])
-                        else:
-                            dfdict[key].append(val)
-                    
-    '''
-    lst = os.listdir('hyp_results/' + res['sig_myo'][0])
-    file = sorted(lst)[0]
-    with open('hyp_results/' + res['sig_myo'][0] + '/' + file) as f:
-        read_data = f.read().split('\n')
+        files = os.listdir(direc)
+        if len(files) == 5: # indicates all the necessary data was recorded:
+            textfile = sorted(os.listdir(direc))[0]
+            with open(direc + '/' + textfile) as f:
+                for line in f:
+                    if '=' in line:
+                        key = line[0:(line.find('=')-1)]
+                        if key in dfdict.keys():
+                            val = line[(line.find('=')+2):(len(line)-1)]
+                            if key == 'ex_sigsqs':
+                                dfdict[key].append(float(val[1:val.find(' ')]))
+                            else:
+                                if key == 'N':
+                                    dfdict[key].append(int(val))
+                                elif key in ['SEED_NUM', 'test_data']:
+                                    dfdict[key].append(val)
+                                else:
+                                    dfdict[key].append(float(val))
+                                
+    df = pd.DataFrame.from_dict(dfdict)
+    return df
     
-    '''
-    '''
-    
-    '''
+df = summary()
+'''
+plt.scatter(df['SEED_NUM'], df['mean MEIRL_det_tot'])
+plt.scatter(df['SEED_NUM'], df['mean MEIRL_unif_tot'], c='r')
+'''
+seedmeans = (df.groupby('SEED_NUM')['mean MEIRL_det_tot']).mean()
+
+plt.show()
 
 '''
 [need to test all 10 seeds; vary sigsq, ETA_COEF, N?]
@@ -1678,7 +1671,7 @@ RESULTS FROM results_var_hyper:
 12) [seed 60] ETA_COEF varying from 0.01, 0.05, 0.5
 13) [seed 100] ETA_COEF varying from 0.01, 0.05, 0.5
 14) [seed 140] ETA_COEF varying from 0.01, 0.05, 0.5
-15) [seed 180] ETA_COEF varying from 0.01, 0.05, 0.5
+  15) [seed 180] ETA_COEF varying from 0.01, 0.05, 0.5
 16) [seed 20, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
 17) [seed 60, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
 18) [seed 100, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
