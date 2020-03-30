@@ -1229,6 +1229,28 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         f.write('mean random_tot = ' + str(np.mean(d_tot)) + '\n')
         f.write('sd random_tot = ' + str(d_sd) + '\n')
         f.close()
+    
+    # resetting any vars that might have changed
+    global HYPARAMS
+    HYPARAMS = {'D': 16,
+            'MOVE_NOISE': 0.05,
+            'INTERCEPT_ETA': 0,
+            'WEIGHT': 2,
+            'RESET': 20,
+            'COEF': 0.1,
+            'ETA_COEF': 0.01,
+            'GAM': 0.9,
+            'M': 20,
+            'N': 100,
+            'J': 20,
+            'T': 50,
+            'Ti': 20,
+            'B': 50,
+            'INTERCEPT_REW': -1,
+            'learn_rate': 0.5,
+            'cr_reps': 10,
+            'reps': 5,
+            'sigsq_list': [0.1, 0.1, 0.1, 0.1]}
 
 
 
@@ -1605,11 +1627,37 @@ def summary():
     for cat, nums in res_dict.items():
         res[cat] = [fo for fo in res_folds if re.match(dict_match(nums), fo)]
     pass
+
+    dfdict = {'ETA_COEF': [], 'N': [], 'ex_sigsqs': [], 'SEED_NUM': [],
+              'test_data': [], 'true_tot': [], 'mean MEIRL_det_tot': [],
+              'sd MEIRL_det_tot': [], 'mean MEIRL_unif_tot': [],
+              'sd MEIRL_unif_tot': [], 'mean AR_AEVB_tot': [],
+              'sd AR_AEVB_tot': [], 'mean random_tot': [],
+              'sd random_tot': []}
+    
+    for fo in res_folds:
+        direc = 'hyp_results/' + fo
+        textfile = sorted(os.listdir(direc))[0]
+        with open(direc + '/' + textfile) as f:
+            for line in f:
+                if '=' in line:
+                    key = line[0:(line.find('=')-1)]
+                    if key in dfdict.keys():
+                        val = line[(line.find('=')+2):(len(line)-1)]
+                        if key == 'ex_sigsqs':
+                            dfdict[key].append(val[1:val.find(' ')])
+                        else:
+                            dfdict[key].append(val)
+                    
     '''
     lst = os.listdir('hyp_results/' + res['sig_myo'][0])
     file = sorted(lst)[0]
     with open('hyp_results/' + res['sig_myo'][0] + '/' + file) as f:
-        read_data = f.read()
+        read_data = f.read().split('\n')
+    
+    '''
+    '''
+    
     '''
 
 '''
@@ -1673,7 +1721,8 @@ RESULTS FROM results_var_hyper:
 55)[seed 200] N varying from 20, 50, 100
 56)[seed 40, boltz] N varying from 20, 50, 100
 57)[seed 80, boltz] N varying from 20, 50, 100
-
+58)[seed 120, boltz] N varying from 20, 50, 100
+59)[seed 160, boltz] N varying from 20, 50, 100
 
 
                  
