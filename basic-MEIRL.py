@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import datetime
 import os
+import re
 
 '''
 A simple DxD gridworld to test out multiple-experts IRL.
@@ -1576,6 +1577,9 @@ Switched to uniform distribution to generate theta and now it's finally not
 working on random data
 '''
 
+def dict_match(nums):
+    return '(' + ')|('.join([str(i) + '\$' for i in nums]) + ')'
+
 def summary():
     '''
     Using results from results_var_hyper, generates summary data and plots for:
@@ -1589,12 +1593,24 @@ def summary():
     for i in range(5):
         seeds[20+40*i] = [(i+1) + 5*j for j in range(4)]
         seeds[40+40*i] = [(i+21) + 5*j for j in range(4)]
-    # seed 20 = 1, 6, 11, 16
-    # seed 60 = 2, 7, 12, 17
-    # ...
-    # seed 40 = 21, 26, 31, 36
-    # seed 80 = 22, 27, 32, 37
-    # ...
+    res_dict = {'sig_myo': list(range(1,6)) + list(range(21,26)),
+                'sig_boltz': list(range(6,11)) + list(range(26,31)),
+                'eta_myo': list(range(11,16)) + list(range(31,36)),
+                'eta_boltz': list(range(16,21)) + list(range(36,41)),
+                'N_myo': list(range(41,46)) + list(range(51,56)),
+                'N_boltz': list(range(46,51)) + list(range(56,61))
+                }
+    # plotting sigsq = 0.01 results for all seeds, reg vs boltz
+    res = {}
+    for cat, nums in res_dict.items():
+        res[cat] = [fo for fo in res_folds if re.match(dict_match(nums), fo)]
+    pass
+    '''
+    lst = os.listdir('hyp_results/' + res['sig_myo'][0])
+    file = sorted(lst)[0]
+    with open('hyp_results/' + res['sig_myo'][0] + '/' + file) as f:
+        read_data = f.read()
+    '''
 
 '''
 [need to test all 10 seeds; vary sigsq, ETA_COEF, N?]
@@ -1642,16 +1658,21 @@ RESULTS FROM results_var_hyper:
 40) [seed 200, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
 41) [seed 20] N varying from 20, 50, 100
 42) [seed 60] N var from 20, 50, 100
-43)
-44)
-45)
-46)
-47)
-48)
-49)
-50)
-
-
+43) [seed 100] N var from 20, 50, 100
+44) [seed 140] N var from 20, 50, 100
+45) [seed 180] N var from 20, 50, 100 
+46) [seed 20, boltz] N varying from 20, 50, 100
+47) [seed 60, boltz] N varying from 20, 50, 100
+48) [seed 100, boltz] N varying from 20, 50, 100
+49) [seed 140, boltz] N varying from 20, 50, 100
+50)[seed 180, boltz] N varying from 20, 50, 100
+51)[seed 40] N varying from 20, 50, 100
+52)[seed 80] N varying from 20, 50, 100
+53)[seed 120] N varying from 20, 50, 100                 
+54)[seed 160] N varying from 20, 50, 100
+55)[seed 200] N varying from 20, 50, 100
+56)[seed 40, boltz] N varying from 20, 50, 100
+57)[seed 80, boltz] N varying from 20, 50, 100
 
 
 
