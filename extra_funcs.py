@@ -6,6 +6,46 @@ Created on Mon Mar 23 21:04:49 2020
 @author: adigi
 """
 
+def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
+                     action_space, B, m, M, Ti, N, learn_rate, reps, policy, T,
+                     rewards, init_Q, J, centers_x, centers_y,
+                     cr_reps, algo_a, algo_b, random=False, save=False):
+    start = datetime.datetime.now()
+    s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
+    true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space,
+      action_space, rewards)
+    plt.plot(np.cumsum(true_rew), color='b') 
+    true_total = np.sum(true_rew)
+    totals = [[],[]]
+    cols = ['r', 'g']
+    for j in range(J):
+        ta = algo_a(theta, alpha, sigsq, phi, beta, traj_data, TP,
+          state_space, action_space, B, m, M, Ti, N, learn_rate, reps, centers_x,
+          centers_y)[0]
+        if random:
+            tb = np.random.normal(size=theta.shape)
+        else:
+            tb = algo_b(theta, alpha, sigsq, phi, beta,
+              traj_data, TP, state_space, action_space, B, m, M, Ti, N, learn_rate,
+              reps, centers_x, centers_y)[0]
+        theta_stars = [ta, tb]
+        for i in range(2):
+            reward_est = lin_rew_func(theta_stars[i], state_space, centers_x,
+              centers_y)
+            est_policy = value_iter(state_space, action_space, reward_est, TP,
+              GAM, 1e-5)[0]
+            est_rew = cumulative_reward(s_list, cr_reps, est_policy, T,
+              state_space, action_space, rewards)
+            plt.plot(np.cumsum(est_rew), color=cols[i])
+            totals[i].append(np.sum(est_rew))
+        sec = (datetime.datetime.now() - start).total_seconds()
+        print(str(round((j+1)/J*100, 3)) + '% done: ' + str(round(sec / 60, 3)))
+    if save:
+        plt.savefig(save[0] + '___' + save[1] + '.png')
+        plt.show()
+    return true_total, totals[0], totals[1], np.std(totals[0]), np.std(totals[1])
+
+
 def save_results(id_num,  algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
                  test_data='myo', hyparams=HYPARAMS):
     '''

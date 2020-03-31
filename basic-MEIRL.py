@@ -16,6 +16,26 @@ direction, stays in place.
 Actions: 0 = up, 1 = right, 2 = down, 3 = left
 '''
 
+HYPARAMS = {'D': 16,
+            'MOVE_NOISE': 0.05,
+            'INTERCEPT_ETA': 0,
+            'WEIGHT': 2,
+            'COEF': 0.1,
+            'ETA_COEF': 0.01,
+            'GAM': 0.9,
+            'M': 20,
+            'N': 100,
+            'J': 20,
+            'T': 50,
+            'Ti': 20,
+            'B': 50,
+            'INTERCEPT_REW': -1,
+            'learn_rate': 0.5,
+            'cr_reps': 10,
+            'reps': 5,
+            'sigsq_list': [0.1, 0.1, 0.1, 0.1]}
+
+
 ############################### Helper functions #############################
 
 
@@ -189,7 +209,7 @@ def synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
     for _ in range(Ti-1):
         s = grid_step(s,a)
         states.append(s)
-        beta = np.dot(eta(s), alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
+        beta = np.dot(eta(s), alpha[i]) + np.random.normal(0, np.sqrt(sigsq[i]))
         if type(Q) == np.ndarray:
             a = np.random.choice(action_space, p = softmax(Q[s[0],s[1]], beta))
         else:
@@ -846,50 +866,10 @@ def cumulative_reward(s_list, cr_reps, policy, T, state_space, action_space,
     return reward_list
 
 
-def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-                     action_space, B, m, M, Ti, N, learn_rate, reps, policy, T,
-                     rewards, init_Q, J, centers_x, centers_y,
-                     cr_reps, algo_a, algo_b, random=False, save=False):
-    start = datetime.datetime.now()
-    s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
-    true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space,
-      action_space, rewards)
-    plt.plot(np.cumsum(true_rew), color='b') 
-    true_total = np.sum(true_rew)
-    totals = [[],[]]
-    cols = ['r', 'g']
-    for j in range(J):
-        ta = algo_a(theta, alpha, sigsq, phi, beta, traj_data, TP,
-          state_space, action_space, B, m, M, Ti, N, learn_rate, reps, centers_x,
-          centers_y)[0]
-        if random:
-            tb = np.random.normal(size=theta.shape)
-        else:
-            tb = algo_b(theta, alpha, sigsq, phi, beta,
-              traj_data, TP, state_space, action_space, B, m, M, Ti, N, learn_rate,
-              reps, centers_x, centers_y)[0]
-        theta_stars = [ta, tb]
-        for i in range(2):
-            reward_est = lin_rew_func(theta_stars[i], state_space, centers_x,
-              centers_y)
-            est_policy = value_iter(state_space, action_space, reward_est, TP,
-              GAM, 1e-5)[0]
-            est_rew = cumulative_reward(s_list, cr_reps, est_policy, T,
-              state_space, action_space, rewards)
-            plt.plot(np.cumsum(est_rew), color=cols[i])
-            totals[i].append(np.sum(est_rew))
-        sec = (datetime.datetime.now() - start).total_seconds()
-        print(str(round((j+1)/J*100, 3)) + '% done: ' + str(round(sec / 60, 3)))
-    if save:
-        plt.savefig(save[0] + '___' + save[1] + '.png')
-        plt.show()
-    return true_total, totals[0], totals[1], np.std(totals[0]), np.std(totals[1])
-
-
 def evaluate_all(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-                     action_space, B, m, M, Ti, N, learn_rate, reps, policy, T,
-                     rewards, init_Q, J, centers_x, centers_y,
-                     cr_reps, save=False):
+                 action_space, B, m, M, Ti, N, learn_rate, reps, policy, T,
+                 rewards, init_Q, J, centers_x, centers_y, cr_reps, save=False,
+                 verbose=False):
     start = datetime.datetime.now()
     s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
     true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space,
@@ -922,52 +902,50 @@ def evaluate_all(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             plt.plot(np.cumsum(est_rew), color=cols[i])
             totals[i].append(np.sum(est_rew))
         sec = (datetime.datetime.now() - start).total_seconds()
-        print(str(round((j+1)/J*100, 3)) + '% done: ' + str(round(sec / 60, 3)))
+        if verbose:
+            percent = str(round((j+1)/J*100, 3))
+            time = str(round(sec / 60, 3))
+            print(percent + '% done: ' + time)
     if save:
         plt.savefig(save[0] + '___' + save[1] + '.png')
         plt.show()
     return (true_total, totals[0], totals[1], totals[2], totals[3],
       np.std(totals[0]), np.std(totals[1]), np.std(totals[2]),
       np.std(totals[3]))
-
-
-seeds_1 = [20,40,60,80,100]
-seeds_2 = [120,140,160,180,200]
-
-HYPARAMS = {'D': 16,
-            'MOVE_NOISE': 0.05,
-            'INTERCEPT_ETA': 0,
-            'WEIGHT': 2,
-            'COEF': 0.1,
-            'ETA_COEF': 0.01,
-            'GAM': 0.9,
-            'M': 20,
-            'N': 100,
-            'J': 20,
-            'T': 50,
-            'Ti': 20,
-            'B': 50,
-            'INTERCEPT_REW': -1,
-            'learn_rate': 0.5,
-            'cr_reps': 10,
-            'reps': 5,
-            'sigsq_list': [0.1, 0.1, 0.1, 0.1]}
         
 
 def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
                       hyparams=HYPARAMS):
+    '''
+    Tests all algorithms on the MDP determined by the given seed, varying
+    the value of param across the list par_vals. These results are stored in
+    a folder named with id_num and the current datetime (used to ensure
+    unique filenames), which contains:
+    1) .txt reporting parameter and hyperparameter values, initial
+     values, and the results for all algorithms.
+    2) .png of the reward function
+    3) .png of best action in each state according to next-step reward
+    4) .png of best action in each state according to Q*
+    5) .png of cumulative reward for each run of each algorithm; color
+    legend is:
+     * blue = policy trained on ground truth reward
+     * red = MEIRL_det
+     * green = MEIRL_unif
+     * black = AR_AEVB
+     * magenta = random theta
+    '''
     SEED_NUM = seed
     for par in par_vals:
         hyparams[param] = par
         
         np.random.seed(SEED_NUM)
-        global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, RESCALE, COEF
+        global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, COEF
         global ETA_COEF, GAM, M, N, J, T, Ti, B, INTERCEPT_REW, TP
         (D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, COEF, ETA_COEF, GAM, M, N, J,
           T, Ti, B, INTERCEPT_REW, learn_rate, cr_reps, reps,
           sigsq_list) = (hyparams['D'], hyparams['MOVE_NOISE'],
-          hyparams['INTERCEPT_ETA'], hyparams['WEIGHT'],
-          hyparams['COEF'], hyparams['ETA_COEF'], hyparams['GAM'], hyparams['M'],
+          hyparams['INTERCEPT_ETA'], hyparams['WEIGHT'], hyparams['COEF'],
+          hyparams['ETA_COEF'], hyparams['GAM'], hyparams['M'],
           hyparams['N'], hyparams['J'], hyparams['T'], hyparams['Ti'],
           hyparams['B'], hyparams['INTERCEPT_REW'], hyparams['learn_rate'],
           hyparams['cr_reps'], hyparams['reps'], hyparams['sigsq_list'])
@@ -1099,6 +1077,9 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
             'sigsq_list': [0.1, 0.1, 0.1, 0.1]}
 
 
+
+seeds_1 = [20,40,60,80,100]
+seeds_2 = [120,140,160,180,200]
 
 #%%
 
@@ -1322,7 +1303,6 @@ DEFAULTS FOR PARAMS:
     MOVE_NOISE = 0.05
     INTERCEPT_ETA = 0
     WEIGHT = 2
-    RESCALE = 1   <---- getting rid of this, just alternating signs
     COEF = 0.1
     ETA_COEF = 0.01
     GAM = 0.9
@@ -1375,7 +1355,6 @@ Added gradient clipping to all algos for >= 23!
                   
 ### 100s are results using thetas drawn from uniform, apparently no longer
 ### have issue where unif does better than random when trained on random data
-### * after that point,     RESCALE = np.array([1,-1] * ((d-1) // 2))
 ### * Note that for these trials, the unif model uses different Nesterov than
 ### others
 
