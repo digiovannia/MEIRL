@@ -937,7 +937,6 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
     SEED_NUM = seed
     for par in par_vals:
         hyparams[param] = par
-        
         np.random.seed(SEED_NUM)
         global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, COEF
         global ETA_COEF, GAM, M, N, J, T, Ti, B, INTERCEPT_REW, TP
@@ -949,6 +948,11 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
           hyparams['N'], hyparams['J'], hyparams['T'], hyparams['Ti'],
           hyparams['B'], hyparams['INTERCEPT_REW'], hyparams['learn_rate'],
           hyparams['cr_reps'], hyparams['reps'], hyparams['sigsq_list'])
+
+        other_pars = {}
+
+        other_pars['SEED_NUM'] = seed
+
         d = D // 2 + 1
         state_space = np.array([(i,j) for i in range(D) for j in range(D)])
         action_space = list(range(4))
@@ -962,19 +966,21 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         p = alpha1.shape[0]
         m = 4
         
-        ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4])
-        ex_sigsqs = np.array(sigsq_list)
+        ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4]) # other_pars['ex_alphas'] =
+        ex_sigsqs = np.array(sigsq_list) #other_pars['ex_sigsqs'] =
         
-        init_Q = np.random.rand(D,D,4)
+        init_Q = np.random.rand(D, D, 4)
     
         filename = '_'.join(str(datetime.datetime.now()).split())
         fname = str(id_num) + '$' + filename.replace(':', '--')
+        if not os.path.isdir('hyp_results/'):
+            os.mkdir('hyp_results')
         os.mkdir('hyp_results/' + fname)
         
-        centers_x = np.random.choice(D, D//2)
-        centers_y = np.random.choice(D, D//2)
+        centers_x = np.random.choice(D, D//2) # other_pars['centers_x'] =
+        centers_y = np.random.choice(D, D//2) # other_pars['centers_y'] =
         
-        theta_true = 3*np.random.rand(D // 2 + 1) - 2 #np.random.normal(size = D // 2 + 1, scale=3)
+        theta_true = 3*np.random.rand(D//2 + 1) - 2 #other_pars['theta_true'] = 
         rewards = lin_rew_func(theta_true, state_space, centers_x, centers_y)
         sns.heatmap(rewards)
         plt.savefig('hyp_results/' + fname + '/' + 'true_reward.png')
@@ -985,24 +991,29 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         
         compare_myo_opt(rewards, TP, Q, save=fname, hyp=True)
         
-        phi = np.random.rand(m,2)
-        alpha = np.random.normal(size=(m,p), scale=0.05)
+        phi = np.random.rand(m,2) # other_pars['phi'] =
+        alpha = np.random.normal(size=(m,p), scale=0.05) # other_pars['alpha'] =
         #sigsq = 1e-16 + np.zeros(m)
-        sigsq = np.random.rand(m)
-        beta = np.random.rand(m)
-        theta = np.random.normal(size=d) #np.zeros_like(theta_true)
+        sigsq = np.random.rand(m) # other_pars['sigsq'] =
+        beta = np.random.rand(m) # other_pars['beta'] =
+        theta = np.random.normal(size=d) # other_pars['theta'] =
         
-        traj_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
-                             TP, m)
-        boltz_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
-                             TP, m, Q)
-        dumb_data = random_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
-                             TP, m)
-        
+        traj_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space,
+          action_space, TP, m)
+        boltz_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti,
+          state_space, action_space, TP, m, Q)
+        rand_data = random_data(ex_alphas, ex_sigsqs, rewards, N, Ti,
+          state_space, action_space, TP, m)
         
         if test_data == 'myo':
             (true_tot, a_tot, b_tot, c_tot, d_tot, a_sd, b_sd, c_sd,
              d_sd) = evaluate_all(theta, alpha, sigsq, phi, beta, traj_data,
+              TP, state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
+              opt_policy, T, rewards, init_Q, J, centers_x, centers_y,
+              cr_reps, save=['hyp_results/' + fname + '/' + fname, param])
+        elif test_data == 'random':
+            (true_tot, a_tot, b_tot, c_tot, d_tot, a_sd, b_sd, c_sd,
+             d_sd) = evaluate_all(theta, alpha, sigsq, phi, beta, rand_data,
               TP, state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
               opt_policy, T, rewards, init_Q, J, centers_x, centers_y,
               cr_reps, save=['hyp_results/' + fname + '/' + fname, param])
@@ -1014,6 +1025,11 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
               cr_reps, save=['hyp_results/' + fname + '/' + fname, param])
             
         f = open('hyp_results/' + fname + '/' + fname + '.txt', 'w')
+
+        for gvar, value in hyparams.items():
+            f.write(gvar + ' = ' + str(value) + '\n')
+
+        '''
         f.write('D = ' + str(D) + '\n')
         f.write('MOVE_NOISE = ' + str(MOVE_NOISE) + '\n')
         f.write('INTERCEPT_ETA = ' + str(INTERCEPT_ETA) + '\n')
@@ -1031,6 +1047,7 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         f.write('learn_rate = ' + str(learn_rate) + '\n')
         f.write('cr_reps = ' + str(cr_reps) + '\n')
         f.write('reps = ' + str(reps) + '\n')
+        '''
         f.write('centers_x = ' + str(centers_x) + '\n')
         f.write('centers_y = ' + str(centers_y) + '\n')
         f.write('SEED_NUM = ' + str(SEED_NUM) + '\n')
@@ -1043,7 +1060,6 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         f.write('beta = ' + str(beta) + '\n')
         f.write('phi = ' + str(phi) + '\n')
         f.write('test_data = ' + str(test_data) + '\n')
-            
         f.write('true_tot = ' + str(true_tot) + '\n')
         f.write('mean MEIRL_det_tot = ' + str(np.mean(a_tot)) + '\n')
         f.write('sd MEIRL_det_tot = ' + str(a_sd) + '\n')
@@ -1078,128 +1094,14 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
 
 
 
+
+
 seeds_1 = [20,40,60,80,100]
 seeds_2 = [120,140,160,180,200]
 
 #%%
 
-'''
-How is the unif model so robust???
-
-Performance of AR and unif seem totally unaffected by sigsq
-
-
-(Bearing in mind that J=10 for these, so not too rigorous)
-
-ETA_COEF = 0.01, J=10:
-
-    Results from Seed = [20,40,60,80,100]; ETA_COEF = 0.01; N=100; not sparse reward:
-        * both det and unif do very well on all but 100 - quite unclear what makes
-        this one so much harder
-        * Random does not do well, suggesting it's not just that non-sparse reward
-        MDPs are easy - the uniform model is using *some* sort of critical info.
-        Probably the feature expectations are helping, but shouldn't that still
-        be contaminated by incorrect beta, and R_Z?
-        
-    Next looking at performance on exact same seeds, but boltz_data:
-        * For seeds 20, 40, 80, the algos based on myopic models still successfully
-        match the performance of optimal even when data come from Q-based model!
-         - on seed 60, they do worse than optimal, but still much better than
-         random; unif does better than det here
-         - again they sorta struggle with 100, although unif does decently well
-         (500 vs opt 600)
-         
-ETA_COEF = 0.05, J=20 (less coverage of expertise):
-    * on seed 20, both fall p short of optimal (1600), but still much better than random
-    and here det noticeably outperforms unif (~1080 to 790)
-    * seed 40, 60, 100 has opposite pattern, both quite suboptimal but unif does slightly better
-
-ETA_COEF = 0.01, J=20, sigsq=0.1, AR vs unif:
-    * seed 20: AR does well on some trials but sucks on others, seems to find
-    anti-optimizing solutions. But at least now it isn't *always* bad.
-    * seed 40: again better than avg but AR still p bad relative to unif
-    * seed 60: same story
-    
-ETA_COEF = 0.01, J=20, sigsq=0.4, reps=5, AR vs unif:
-    * seed 20: AR does well on some trials but sucks on others, seems to find
-    anti-optimizing solutions. But at least now it isn't *always* bad.
-    * seed 40: again better than avg but AR still p bad relative to unif
-    * seed 60: same story
-'''
-
-#regular
-theta_star, phi_star, alpha_star, sigsq_star = ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-theta_star_2, phi_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-theta_star_p, alpha_star_p = MEIRL_det(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-theta_star_AR, phi_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha,
-  sigsq, phi, beta, traj_data, TP, state_space, action_space, B, m, M, Ti, N,
-  learn_rate, reps, centers_x, centers_y)
-theta_star_u, beta_star_u = MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-'''
-Testing AR. Seems to consistently find a certain solution, but that solution is
-very wrong...
-* Trying different samples of trajectories, this doesn't some to be a problem
-of sensitivity to the sample. It still consistently settles on this wrong
-answer.
-* Also not because of negative alphas - I used the projection and it still doesn't
-work!
-* Evidently sensitive to INITIAL THETA. varying initial other params didn't change
-much, but varying theta does a lot
-
-
-sigsq of 0.5 --> unif does terrible on non-sparse, hallucinates high reward
-in a corner consistently...
-'''
-# these all seem to do terribly on seed 10, except when sigsq is 0.01 rather than 2 -
-# then MEIRL_det works quite well 
-
-#boltz - FIX THIS
-phi_star_b, theta_star_b, alpha_star_b, sigsq_star_b = ann_AEVB(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-theta_star_p, alpha_star_p = MEIRL_det(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-phi_star_AR, theta_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-theta_star_u, beta_star_u = MEIRL_unif(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-
 # see_trajectory(rewards, np.array(traj_data[0])[0,0])
-
-dumb_data = make_data(alpha_star_2, sigsq_star_2, lin_rew_func(theta_star_2,
-                            state_space, centers_x, centers_y), N, Ti, state_space, action_space,
-                            TP, m)
-
-#sns.heatmap(lin_rew_func(theta_true, state_space, centers_x, centers_y))
-
-'''
-^ results from this, ****SEED 10****:
-true_tot
-Out[87]: -287.57249017468143
-
-np.mean(det_tot_p)
-Out[88]: -404.53112168237095
-
-np.mean(unif_tot_p)
-Out[89]: -484.9908606854497
-
-for comparison, random results in -1000
-
-SEED 20: det and unif both match optimal p consistently, this MDP seems easy
-
-SEED 30: again, det and unif matching optimal; random theta def doesn't, so
- not trivial
-'''
-
-
-# evidently sensitive to initialization, but maybe there's something principled
-# about initializing at theta = 0? Implies prior of ignorance about reward
-
 
 # promising results when using N = 50 and reps = 5, but might
 # not replicate...
