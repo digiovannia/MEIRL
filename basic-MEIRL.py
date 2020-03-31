@@ -16,6 +16,26 @@ direction, stays in place.
 Actions: 0 = up, 1 = right, 2 = down, 3 = left
 '''
 
+HYPARAMS = {'D': 16,
+            'MOVE_NOISE': 0.05,
+            'INTERCEPT_ETA': 0,
+            'WEIGHT': 2,
+            'COEF': 0.1,
+            'ETA_COEF': 0.01,
+            'GAM': 0.9,
+            'M': 20,
+            'N': 100,
+            'J': 20,
+            'T': 50,
+            'Ti': 20,
+            'B': 50,
+            'INTERCEPT_REW': -1,
+            'learn_rate': 0.5,
+            'cr_reps': 10,
+            'reps': 5,
+            'sigsq_list': [0.1, 0.1, 0.1, 0.1]}
+
+
 ############################### Helper functions #############################
 
 
@@ -834,17 +854,8 @@ def random_algo(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     return (np.random.normal(size=theta.shape), 0)
 
 
-'''
-Setting ETA_COEF to 5 (so that experts behave basically randomly everywhere)
-it's evident that the unif model isn't magic. Its robustness in some challenging
-settings still suggests to me that it's using some helpful information -
-could the feature expectations really help that much? The other algos have
-the feature expect too but they don't show this robustness.
- -- Plus, feature expects *depend on the states visited in the trajectories*. If
- the trajectories are noisy, so will the feature expectations be.
-'''
-
 ####################### Functions for evaluation/testing ######################
+
 
 def cumulative_reward(s_list, cr_reps, policy, T, state_space, action_space,
                       rewards):
@@ -855,50 +866,10 @@ def cumulative_reward(s_list, cr_reps, policy, T, state_space, action_space,
     return reward_list
 
 
-def evaluate_general(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-                     action_space, B, m, M, Ti, N, learn_rate, reps, policy, T,
-                     rewards, init_Q, J, centers_x, centers_y,
-                     cr_reps, algo_a, algo_b, random=False, save=False):
-    start = datetime.datetime.now()
-    s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
-    true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space,
-      action_space, rewards)
-    plt.plot(np.cumsum(true_rew), color='b') 
-    true_total = np.sum(true_rew)
-    totals = [[],[]]
-    cols = ['r', 'g']
-    for j in range(J):
-        ta = algo_a(theta, alpha, sigsq, phi, beta, traj_data, TP,
-          state_space, action_space, B, m, M, Ti, N, learn_rate, reps, centers_x,
-          centers_y)[0]
-        if random:
-            tb = np.random.normal(size=theta.shape)
-        else:
-            tb = algo_b(theta, alpha, sigsq, phi, beta,
-              traj_data, TP, state_space, action_space, B, m, M, Ti, N, learn_rate,
-              reps, centers_x, centers_y)[0]
-        theta_stars = [ta, tb]
-        for i in range(2):
-            reward_est = lin_rew_func(theta_stars[i], state_space, centers_x,
-              centers_y)
-            est_policy = value_iter(state_space, action_space, reward_est, TP,
-              GAM, 1e-5)[0]
-            est_rew = cumulative_reward(s_list, cr_reps, est_policy, T,
-              state_space, action_space, rewards)
-            plt.plot(np.cumsum(est_rew), color=cols[i])
-            totals[i].append(np.sum(est_rew))
-        sec = (datetime.datetime.now() - start).total_seconds()
-        print(str(round((j+1)/J*100, 3)) + '% done: ' + str(round(sec / 60, 3)))
-    if save:
-        plt.savefig(save[0] + '___' + save[1] + '.png')
-        plt.show()
-    return true_total, totals[0], totals[1], np.std(totals[0]), np.std(totals[1])
-
-
 def evaluate_all(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-                     action_space, B, m, M, Ti, N, learn_rate, reps, policy, T,
-                     rewards, init_Q, J, centers_x, centers_y,
-                     cr_reps, save=False):
+                 action_space, B, m, M, Ti, N, learn_rate, reps, policy, T,
+                 rewards, init_Q, J, centers_x, centers_y, cr_reps, save=False,
+                 verbose=False):
     start = datetime.datetime.now()
     s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
     true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space,
@@ -931,189 +902,57 @@ def evaluate_all(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             plt.plot(np.cumsum(est_rew), color=cols[i])
             totals[i].append(np.sum(est_rew))
         sec = (datetime.datetime.now() - start).total_seconds()
-        print(str(round((j+1)/J*100, 3)) + '% done: ' + str(round(sec / 60, 3)))
+        if verbose:
+            percent = str(round((j+1)/J*100, 3))
+            time = str(round(sec / 60, 3))
+            print(percent + '% done: ' + time)
     if save:
         plt.savefig(save[0] + '___' + save[1] + '.png')
         plt.show()
     return (true_total, totals[0], totals[1], totals[2], totals[3],
       np.std(totals[0]), np.std(totals[1]), np.std(totals[2]),
       np.std(totals[3]))
-
-
-seeds_1 = [20,40,60,80,100]
-seeds_2 = [120,140,160,180,200]
-
-HYPARAMS = {'D': 16,
-            'MOVE_NOISE': 0.05,
-            'INTERCEPT_ETA': 0,
-            'WEIGHT': 2,
-            'COEF': 0.1,
-            'ETA_COEF': 0.01,
-            'GAM': 0.9,
-            'M': 20,
-            'N': 100,
-            'J': 20,
-            'T': 50,
-            'Ti': 20,
-            'B': 50,
-            'INTERCEPT_REW': -1,
-            'learn_rate': 0.5,
-            'cr_reps': 10,
-            'reps': 5,
-            'sigsq_list': [0.1, 0.1, 0.1, 0.1]}
-
-def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
-                 test_data='myo', seeds=seeds_1, hyparams=HYPARAMS):
-    '''
-    Compares two algorithms with each other (and with ground truth reward)
-    with varying seed values, including varying reward functions
-    '''
-    
-    # Global params
-    global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, RESCALE, COEF
-    global ETA_COEF, GAM, M, N, J, T, Ti, B, INTERCEPT_REW, TP
-    (D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, COEF, ETA_COEF, GAM, M, N, J,
-      T, Ti, B, INTERCEPT_REW, learn_rate, cr_reps, reps,
-      sigsq_list) = (hyparams['D'], hyparams['MOVE_NOISE'],
-      hyparams['INTERCEPT_ETA'], hyparams['WEIGHT'],
-      hyparams['COEF'], hyparams['ETA_COEF'], hyparams['GAM'], hyparams['M'],
-      hyparams['N'], hyparams['J'], hyparams['T'], hyparams['Ti'],
-      hyparams['B'], hyparams['INTERCEPT_REW'], hyparams['learn_rate'],
-      hyparams['cr_reps'], hyparams['reps'], hyparams['sigsq_list'])
-    d = D // 2 + 1
-    state_space = np.array([(i,j) for i in range(D) for j in range(D)])
-    action_space = list(range(4))
-    TP = transition(state_space, action_space)
-    
-    alpha1 = np.array([WEIGHT, 0, 0, 0, 1])
-    alpha2 = np.array([0, 0, WEIGHT, 0, 1])
-    alpha3 = np.array([0, 0, 0, WEIGHT, 1]) 
-    alpha4 = np.array([0, WEIGHT, 0, 0, 1])
-    
-    p = alpha1.shape[0]
-    m = 4
-    
-    ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4])
-    ex_sigsqs = np.array(sigsq_list)
-    
-    init_Q = np.random.rand(D,D,4)
-    
-    for seed in seeds:
-        filename = '_'.join(str(datetime.datetime.now()).split())
-        fname = str(id_num) + '$' + filename.replace(':', '--')
-        os.mkdir('results/' + fname)
-        
-        SEED_NUM = seed#100#50#80#70#60
-        np.random.seed(SEED_NUM) #50) #40) #30) #20) #10)
-        
-        centers_x = np.random.choice(D, D//2)
-        centers_y = np.random.choice(D, D//2)
-        
-        theta_true = 3*np.random.rand(D // 2 + 1) - 2 #np.random.normal(size = D // 2 + 1, scale=3)
-        rewards = lin_rew_func(theta_true, state_space, centers_x, centers_y)
-        sns.heatmap(rewards)
-        plt.savefig('results/' + fname + '/' + 'true_reward.png')
-        plt.show()
-        
-        opt_policy, Q = value_iter(state_space, action_space, rewards, TP, GAM, 1e-5)
-        
-        compare_myo_opt(rewards, TP, Q, save=fname)
-        
-        phi = np.random.rand(m,2)
-        alpha = np.random.normal(size=(m,p), scale=0.05)
-        #sigsq = 1e-16 + np.zeros(m)
-        sigsq = np.random.rand(m)
-        beta = np.random.rand(m)
-        theta = np.random.normal(size=d) #np.zeros_like(theta_true)
-        
-        traj_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
-                             TP, m)
-        boltz_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
-                             TP, m, Q)
-        dumb_data = random_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
-                             TP, m)
-        
-        alg_a_str = str(algo_a).split()[1]
-        if random:
-            alg_b_str = 'random'
-        else:
-            alg_b_str = str(algo_b).split()[1]
-        
-        if test_data == 'myo':
-            true_tot, a_tot, b_tot, a_sd, b_sd = evaluate_general(theta, alpha, sigsq, phi, beta, 
-                                                         traj_data,
-              TP, state_space,
-              action_space, B, m, M, Ti, N, learn_rate, reps, opt_policy, T,
-              rewards, init_Q, J, centers_x, centers_y,
-              cr_reps, algo_a, algo_b, random=random,
-              save=['results/' + fname + '/' + fname,
-                    alg_a_str + '__' + alg_b_str])
-        else:
-            true_tot, a_tot, b_tot, a_sd, b_sd = evaluate_general(theta, alpha, sigsq, phi, beta,
-                                                          boltz_data,
-              TP, state_space,
-              action_space, B, m, M, Ti, N, learn_rate, reps, opt_policy, T,
-              rewards, init_Q, J, centers_x, centers_y,
-              cr_reps, algo_a, algo_b, random=random,
-              save=['results/' + fname + '/' + fname,
-                    alg_a_str + '__' + alg_b_str])
-            
-        f = open('results/' + fname + '/' + fname + '.txt', 'w')
-        f.write('D = ' + str(D) + '\n')
-        f.write('MOVE_NOISE = ' + str(MOVE_NOISE) + '\n')
-        f.write('INTERCEPT_ETA = ' + str(INTERCEPT_ETA) + '\n')
-        f.write('INTERCEPT_REW = ' + str(INTERCEPT_REW) + '\n')
-        f.write('WEIGHT = ' + str(WEIGHT) + '\n')
-        f.write('COEF = ' + str(COEF) + '\n')
-        f.write('GAM = ' + str(GAM) + '\n')
-        f.write('ETA_COEF = ' + str(ETA_COEF) + '\n')
-        f.write('M = ' + str(M) + '\n')
-        f.write('N = ' + str(N) + '\n')
-        f.write('J = ' + str(J) + '\n')
-        f.write('T = ' + str(T) + '\n')
-        f.write('Ti = ' + str(Ti) + '\n')
-        f.write('B = ' + str(B) + '\n')
-        f.write('learn_rate = ' + str(learn_rate) + '\n')
-        f.write('cr_reps = ' + str(cr_reps) + '\n')
-        f.write('reps = ' + str(reps) + '\n')
-        f.write('centers_x = ' + str(centers_x) + '\n')
-        f.write('centers_y = ' + str(centers_y) + '\n')
-        f.write('SEED_NUM = ' + str(SEED_NUM) + '\n')
-        f.write('theta_true = ' + str(theta_true) + '\n')
-        f.write('ex_alphas = ' + str(ex_alphas) + '\n')
-        f.write('ex_sigsqs = ' + str(ex_sigsqs) + '\n')
-        f.write('alpha = ' + str(alpha) + '\n')
-        f.write('sigsq = ' + str(sigsq) + '\n')
-        f.write('theta = ' + str(theta) + '\n')
-        f.write('beta = ' + str(beta) + '\n')
-        f.write('phi = ' + str(phi) + '\n')
-        f.write('test_data = ' + str(test_data) + '\n')
-            
-        f.write('true_tot = ' + str(true_tot) + '\n')
-        f.write('mean algo_a_tot = ' + str(np.mean(a_tot)) + '\n')
-        f.write('sd algo_a_tot = ' + str(a_sd) + '\n')
-        f.write('mean algo_b_tot = ' + str(np.mean(b_tot)) + '\n')
-        f.write('sd algo_b_tot = ' + str(b_sd) + '\n')
-        f.close()
         
 
 def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
                       hyparams=HYPARAMS):
+    '''
+    Tests all algorithms on the MDP determined by the given seed, varying
+    the value of param across the list par_vals. These results are stored in
+    a folder named with id_num and the current datetime (used to ensure
+    unique filenames), which contains:
+    1) .txt reporting parameter and hyperparameter values, initial
+     values, and the results for all algorithms.
+    2) .png of the reward function
+    3) .png of best action in each state according to next-step reward
+    4) .png of best action in each state according to Q*
+    5) .png of cumulative reward for each run of each algorithm; color
+    legend is:
+     * blue = policy trained on ground truth reward
+     * red = MEIRL_det
+     * green = MEIRL_unif
+     * black = AR_AEVB
+     * magenta = random theta
+    '''
     SEED_NUM = seed
     for par in par_vals:
         hyparams[param] = par
-        
         np.random.seed(SEED_NUM)
-        global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, RESCALE, COEF
+        global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, COEF
         global ETA_COEF, GAM, M, N, J, T, Ti, B, INTERCEPT_REW, TP
         (D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, COEF, ETA_COEF, GAM, M, N, J,
           T, Ti, B, INTERCEPT_REW, learn_rate, cr_reps, reps,
           sigsq_list) = (hyparams['D'], hyparams['MOVE_NOISE'],
-          hyparams['INTERCEPT_ETA'], hyparams['WEIGHT'],
-          hyparams['COEF'], hyparams['ETA_COEF'], hyparams['GAM'], hyparams['M'],
+          hyparams['INTERCEPT_ETA'], hyparams['WEIGHT'], hyparams['COEF'],
+          hyparams['ETA_COEF'], hyparams['GAM'], hyparams['M'],
           hyparams['N'], hyparams['J'], hyparams['T'], hyparams['Ti'],
           hyparams['B'], hyparams['INTERCEPT_REW'], hyparams['learn_rate'],
           hyparams['cr_reps'], hyparams['reps'], hyparams['sigsq_list'])
+
+        other_pars = {}
+
+        other_pars['SEED_NUM'] = seed
+
         d = D // 2 + 1
         state_space = np.array([(i,j) for i in range(D) for j in range(D)])
         action_space = list(range(4))
@@ -1127,19 +966,21 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         p = alpha1.shape[0]
         m = 4
         
-        ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4])
-        ex_sigsqs = np.array(sigsq_list)
+        ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4]) # other_pars['ex_alphas'] =
+        ex_sigsqs = np.array(sigsq_list) #other_pars['ex_sigsqs'] =
         
-        init_Q = np.random.rand(D,D,4)
+        init_Q = np.random.rand(D, D, 4)
     
         filename = '_'.join(str(datetime.datetime.now()).split())
         fname = str(id_num) + '$' + filename.replace(':', '--')
+        if not os.path.isdir('hyp_results/'):
+            os.mkdir('hyp_results')
         os.mkdir('hyp_results/' + fname)
         
-        centers_x = np.random.choice(D, D//2)
-        centers_y = np.random.choice(D, D//2)
+        centers_x = np.random.choice(D, D//2) # other_pars['centers_x'] =
+        centers_y = np.random.choice(D, D//2) # other_pars['centers_y'] =
         
-        theta_true = 3*np.random.rand(D // 2 + 1) - 2 #np.random.normal(size = D // 2 + 1, scale=3)
+        theta_true = 3*np.random.rand(D//2 + 1) - 2 #other_pars['theta_true'] = 
         rewards = lin_rew_func(theta_true, state_space, centers_x, centers_y)
         sns.heatmap(rewards)
         plt.savefig('hyp_results/' + fname + '/' + 'true_reward.png')
@@ -1150,24 +991,29 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         
         compare_myo_opt(rewards, TP, Q, save=fname, hyp=True)
         
-        phi = np.random.rand(m,2)
-        alpha = np.random.normal(size=(m,p), scale=0.05)
+        phi = np.random.rand(m,2) # other_pars['phi'] =
+        alpha = np.random.normal(size=(m,p), scale=0.05) # other_pars['alpha'] =
         #sigsq = 1e-16 + np.zeros(m)
-        sigsq = np.random.rand(m)
-        beta = np.random.rand(m)
-        theta = np.random.normal(size=d) #np.zeros_like(theta_true)
+        sigsq = np.random.rand(m) # other_pars['sigsq'] =
+        beta = np.random.rand(m) # other_pars['beta'] =
+        theta = np.random.normal(size=d) # other_pars['theta'] =
         
-        traj_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
-                             TP, m)
-        boltz_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
-                             TP, m, Q)
-        dumb_data = random_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
-                             TP, m)
-        
+        traj_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space,
+          action_space, TP, m)
+        boltz_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti,
+          state_space, action_space, TP, m, Q)
+        rand_data = random_data(ex_alphas, ex_sigsqs, rewards, N, Ti,
+          state_space, action_space, TP, m)
         
         if test_data == 'myo':
             (true_tot, a_tot, b_tot, c_tot, d_tot, a_sd, b_sd, c_sd,
              d_sd) = evaluate_all(theta, alpha, sigsq, phi, beta, traj_data,
+              TP, state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
+              opt_policy, T, rewards, init_Q, J, centers_x, centers_y,
+              cr_reps, save=['hyp_results/' + fname + '/' + fname, param])
+        elif test_data == 'random':
+            (true_tot, a_tot, b_tot, c_tot, d_tot, a_sd, b_sd, c_sd,
+             d_sd) = evaluate_all(theta, alpha, sigsq, phi, beta, rand_data,
               TP, state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
               opt_policy, T, rewards, init_Q, J, centers_x, centers_y,
               cr_reps, save=['hyp_results/' + fname + '/' + fname, param])
@@ -1179,6 +1025,11 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
               cr_reps, save=['hyp_results/' + fname + '/' + fname, param])
             
         f = open('hyp_results/' + fname + '/' + fname + '.txt', 'w')
+
+        for gvar, value in hyparams.items():
+            f.write(gvar + ' = ' + str(value) + '\n')
+
+        '''
         f.write('D = ' + str(D) + '\n')
         f.write('MOVE_NOISE = ' + str(MOVE_NOISE) + '\n')
         f.write('INTERCEPT_ETA = ' + str(INTERCEPT_ETA) + '\n')
@@ -1196,6 +1047,7 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         f.write('learn_rate = ' + str(learn_rate) + '\n')
         f.write('cr_reps = ' + str(cr_reps) + '\n')
         f.write('reps = ' + str(reps) + '\n')
+        '''
         f.write('centers_x = ' + str(centers_x) + '\n')
         f.write('centers_y = ' + str(centers_y) + '\n')
         f.write('SEED_NUM = ' + str(SEED_NUM) + '\n')
@@ -1208,7 +1060,6 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         f.write('beta = ' + str(beta) + '\n')
         f.write('phi = ' + str(phi) + '\n')
         f.write('test_data = ' + str(test_data) + '\n')
-            
         f.write('true_tot = ' + str(true_tot) + '\n')
         f.write('mean MEIRL_det_tot = ' + str(np.mean(a_tot)) + '\n')
         f.write('sd MEIRL_det_tot = ' + str(a_sd) + '\n')
@@ -1241,351 +1092,6 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
             'reps': 5,
             'sigsq_list': [0.1, 0.1, 0.1, 0.1]}
 
-
-
-#%%
-
-'''
-How is the unif model so robust???
-
-Performance of AR and unif seem totally unaffected by sigsq
-
-
-(Bearing in mind that J=10 for these, so not too rigorous)
-
-ETA_COEF = 0.01, J=10:
-
-    Results from Seed = [20,40,60,80,100]; ETA_COEF = 0.01; N=100; not sparse reward:
-        * both det and unif do very well on all but 100 - quite unclear what makes
-        this one so much harder
-        * Random does not do well, suggesting it's not just that non-sparse reward
-        MDPs are easy - the uniform model is using *some* sort of critical info.
-        Probably the feature expectations are helping, but shouldn't that still
-        be contaminated by incorrect beta, and R_Z?
-        
-    Next looking at performance on exact same seeds, but boltz_data:
-        * For seeds 20, 40, 80, the algos based on myopic models still successfully
-        match the performance of optimal even when data come from Q-based model!
-         - on seed 60, they do worse than optimal, but still much better than
-         random; unif does better than det here
-         - again they sorta struggle with 100, although unif does decently well
-         (500 vs opt 600)
-         
-ETA_COEF = 0.05, J=20 (less coverage of expertise):
-    * on seed 20, both fall p short of optimal (1600), but still much better than random
-    and here det noticeably outperforms unif (~1080 to 790)
-    * seed 40, 60, 100 has opposite pattern, both quite suboptimal but unif does slightly better
-
-ETA_COEF = 0.01, J=20, sigsq=0.1, AR vs unif:
-    * seed 20: AR does well on some trials but sucks on others, seems to find
-    anti-optimizing solutions. But at least now it isn't *always* bad.
-    * seed 40: again better than avg but AR still p bad relative to unif
-    * seed 60: same story
-    
-ETA_COEF = 0.01, J=20, sigsq=0.4, reps=5, AR vs unif:
-    * seed 20: AR does well on some trials but sucks on others, seems to find
-    anti-optimizing solutions. But at least now it isn't *always* bad.
-    * seed 40: again better than avg but AR still p bad relative to unif
-    * seed 60: same story
-'''
-
-#regular
-theta_star, phi_star, alpha_star, sigsq_star = ann_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-theta_star_2, phi_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-theta_star_p, alpha_star_p = MEIRL_det(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-theta_star_AR, phi_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha,
-  sigsq, phi, beta, traj_data, TP, state_space, action_space, B, m, M, Ti, N,
-  learn_rate, reps, centers_x, centers_y)
-theta_star_u, beta_star_u = MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-'''
-Testing AR. Seems to consistently find a certain solution, but that solution is
-very wrong...
-* Trying different samples of trajectories, this doesn't some to be a problem
-of sensitivity to the sample. It still consistently settles on this wrong
-answer.
-* Also not because of negative alphas - I used the projection and it still doesn't
-work!
-* Evidently sensitive to INITIAL THETA. varying initial other params didn't change
-much, but varying theta does a lot
-
-
-sigsq of 0.5 --> unif does terrible on non-sparse, hallucinates high reward
-in a corner consistently...
-'''
-# these all seem to do terribly on seed 10, except when sigsq is 0.01 rather than 2 -
-# then MEIRL_det works quite well 
-
-#boltz - FIX THIS
-phi_star_b, theta_star_b, alpha_star_b, sigsq_star_b = ann_AEVB(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-phi_star_2, theta_star_2, alpha_star_2, sigsq_star_2 = AEVB(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-theta_star_p, alpha_star_p = MEIRL_det(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-phi_star_AR, theta_star_AR, alpha_star_AR, sigsq_star_AR = AR_AEVB(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-theta_star_u, beta_star_u = MEIRL_unif(theta, alpha, sigsq, phi, beta, boltz_data, TP, state_space,
-         action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y)
-
-# see_trajectory(rewards, np.array(traj_data[0])[0,0])
-
-dumb_data = make_data(alpha_star_2, sigsq_star_2, lin_rew_func(theta_star_2,
-                            state_space, centers_x, centers_y), N, Ti, state_space, action_space,
-                            TP, m)
-
-#sns.heatmap(lin_rew_func(theta_true, state_space, centers_x, centers_y))
-
-'''
-^ results from this, ****SEED 10****:
-true_tot
-Out[87]: -287.57249017468143
-
-np.mean(det_tot_p)
-Out[88]: -404.53112168237095
-
-np.mean(unif_tot_p)
-Out[89]: -484.9908606854497
-
-for comparison, random results in -1000
-
-SEED 20: det and unif both match optimal p consistently, this MDP seems easy
-
-SEED 30: again, det and unif matching optimal; random theta def doesn't, so
- not trivial
-'''
-
-
-# evidently sensitive to initialization, but maybe there's something principled
-# about initializing at theta = 0? Implies prior of ignorance about reward
-
-
-# promising results when using N = 50 and reps = 5, but might
-# not replicate...
-## ^ Yeah, when tried to replicate, the AEVB occasionally gave lackluster results
-## But! Still on average much better than uniform model:
-## mean(AEVB_tot) = 1231.5
-## mean(unif_tot) = 621.5
-# Another rep: no better than random...
-
-# when less sparse reward, does *worse* than uniform model...
-# Problem seems to boil down to degeneracy - many thetas have close-to-optimal ELBO
-# (about -290 for true params vs -330 for theta_star that gives wrong answer)
-# yet assign drastically different reward profiles, e.g. bad state becomes good
-# and good becomes bad
-# **** lemme see if increasing sample size changes this
-# **** yeah it widens gap a bit, although not much; now its -273 for true, -320 for a
-# **** very wrong answer
-
-# works p well even under misspecification for D = 8
-# doesn't really work on D = 16 grid
-
-'''
-To do:
-    * misspec of reward function?
-    * misspec of beta mean?
-    * more/longer trajectories? Could shorten the training traj to speed training
-     but have longer test trajectories to see if long-term reward is improved
-    * try different mu functions for the locally optimal experts; maybe
-     need some threshold of optimality for each expert to get good results
-     -- Looks like when ETA_COEF is set to 0.1 (i.e. very little area covered
-     by optimal experts), the results (on seed 30) are consistently a wide
-     negative blob at the top! Similar results for AEVB. Det does not do well
-     here.
-     -- The uniform model has no such regularity. Maybe that's the key; the
-     well-specified algorithms are perhaps less robust because they consistently
-     reach a wrong answer (when the noise-to-signal ratio is just too high).
-     But nonetheless the uniform model seems to reach something consistently
-     better than random, indeed much better
-     -- maybe learn_rate...
-    * Try restricting beta to be positive - in principle, quite hard to
-      distinguish a state with high positive reward being successfully pursued
-      by most experts from a state with high neg reward being anti-optimized
-         --- done
-    * Vary:
-        - sample size -- see how many samples necessary to get good performance
-            -- tentatively looks like N=100 each is sufficient for det to work,
-            even N=20! N=20 also sufficient for unif
-        - sigma -- maybe true model will outperform uniform when high variance?
-    * Maybe test sample complexity necessary to get some epsilon-close results,
-     plot against (1) size of grid world, (2) amt of noise, (3) coef for mu?
-     * May need to force reward function to be such that doing well in the MDP
-     is hard, i.e. not sufficient to just get one or two "nodes" of the reward
-     space correct
-     * Compare performance for different split of steps in Ti vs N (length vs
-     number of trajectories)
-     * Check action-value distribution vs next-step reward distribution, check
-     that the reason robust to Boltz isn't just that those distributions are
-     v similar
-         -- sort of done but need to organize this
-     * compare diff sigsqs for different experts
-     * test on MCMC...
-     * vary seed used for everything *after* definition of the MDP
-     * increase number of features, for same size of MDP
-     * count of states where myo best and opt best differ
-     * look at learning process of meirl-unif on seed 160, boltz data, in detail, how does
-     it work so well?
-     
-QUALITATIVE NOTES:
-    * Good performance is basically elusive in large D MDPs when beta is allowed
-    to be negative.
-    * The varying-beta model appears to do better than uniform when rewards are
-    sparse *and* states-of-high-expertise by the demonstrators are also sparse,
-    *and* the coverage of these states-of-high-expertise is wide (e.g. all 4
-    corners).
-     - In sparse-reward MDP, results seem to be hit-or-miss, as you'd expect;
-     either the algo places highest reward on the right spot and pursues it above
-     all others - thus doing well - or it doesn't, and does quite poorly.
-     - Increasing coverage of the state space by the experts' high betas seems
-     to improve performance of both det and unif (they get to be higher fraction
-     of optimal in cumulative return). But increasing this coverage helps the
-     unif model a lot more than det, apparently.
-    * All the models seem to do better than random even when there are larger
-    chunks of the state space on which the demonstrators act randomly.
-    * Slightly slower to train on higher Ti:N ratio, holding Ti*N constant -
-    will see if performance changes, though
-    
-Future directions:
-    * sliding scale of a parameter for how myopic the experts are - expected
-    k-step rewards...
-    * robustness - avoiding cases where the algo hallucinates high pos reward
-    in a high NEGATIVE state(s) and anti-optimizes
-    * test on simulations from experts whose beta functions mimick different
-    cognitive biases
-'''
-
-
-######
-'''
-DEFAULTS FOR PARAMS:
-    D=16 #8 #6x
-    MOVE_NOISE = 0.05
-    INTERCEPT_ETA = 0
-    WEIGHT = 2
-    RESCALE = 1   <---- getting rid of this, just alternating signs
-    COEF = 0.1
-    ETA_COEF = 0.01
-    GAM = 0.9
-    M = 20 # number of actions used for importance sampling
-    N = 100 #20 #100 #2000 # number of trajectories per expert
-    J = 20 #10 # should be 30....
-    T = 50
-    Ti = 20 # length of trajectory
-    B = 50 #100 # number of betas/normals sampled for expectation
-    Q_ITERS = 30000 #50000
-    learn_rate = 0.5 #0.0001
-    cr_reps = 10
-    reps = 5
-    sigsqs = 0.1 for all experts
-
-'''
-######
-
-
-'''
-Results I've recorded:
-    
-seeds 20,40,60,80,100
-19) ETA_COEF = 5, all suck
-20) 
-21) like #20 but BOLTZ:
- * seed 100 has many states where best myopic action is different from
- best long-term action, yet both algos work very well on the Boltzmann data!
-22)               
-23) like #20 but Ti = 50; interestingly the results barely change for seed 20, seems
-                  insensitive to trajectory length at least above 20 - good
-                  news for sample complexity
- - or maybe not, seed 40, 60 det takes a big hit; on 80 both do worse.
- - helps on seed 100 tho
-24) now Ti = 21, trying to see if just extremely sensitive to change in seed order
- - not *too* drastic a change from #20
- - pretty strong change (~400 difference) from #20 on seed 60
- - I guess not surprising since this shifts back the random seed determining
-   start states -- could try to make this consistent...?
-                
-   
-seeds 120,140,160,180,200
-25) like #20
-26) like #23
- - both algos *beat the expert* in seed 200!
-                  
-
-Added gradient clipping to all algos for >= 23!                  
-                  
-                  
-### 100s are results using thetas drawn from uniform, apparently no longer
-### have issue where unif does better than random when trained on random data
-### * after that point,     RESCALE = np.array([1,-1] * ((d-1) // 2))
-### * Note that for these trials, the unif model uses different Nesterov than
-### others
-
-100) meirl_unif vs random  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1
-101) meirl_det vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1
-102) meirl_det vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_2
-103) meirl_det vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1; boltz
-104) meirl_det vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_2; boltz
-105) AR_AEVB vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1
-
-
-
-
-                             # AFTER MODIFYING UNIF TO USE FISTA #
-200) meirl_unif vs random  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1 
-201) AR_AEVB vs ann_AEVB  ;  INTERCEPT_REW = -1, sigsqs = 0.1; seeds_1 
-                  
-    
-**********(NOTE: MAY NEED TO REDO EVERYTHING UNDER #100)***************
-    
-    * det vs random; sigsq = 1.5
-    * det vs unif; sigsq = 1.5; ETA_COEF = 5
-     - mostly sucks, but this isn't surprising bc noise drowns it out; this is
-     good, means unif isn't cheating
-    * det vs AR_AEVB; sigsq = 0.8 - both suck but AEVB sometimes does well
-    * det vs AR_AEVB; sigsq = 0.1 - det consistently sucks here
-    * det vs AR_AEVB; sigsq = 0.01 - still det sucks, weird, it used to work
-    * det vs AR_AEVB; sigsq = 0.01, learn_rate = 0.0001 - barely changes from
-    init_theta so both are consistently bad
-    
-    * det vs AR_AEVB; sigsq = 0.01; learn_rate = 0.1; init sigsq = 0;
-    N = 500 - now AEVB seems to do much better on all seeds; but det
-    does a bit worse;
-    * AR_AEVB vs random; sigsq = 0.01; learn_rate = 0.1; init sigsq = 1e-16; N = 2000:
-        extra samples don't help, in fact does worse than with N = 500
-    * unif vs random; sigsq = 2; init sigsq = 1e-16; ETA_COEF = 5 -- there should
-    be basically no signal for the algorithm to learn from here...
-    * det vs unif; sigsq = 2; ETA_COEF = 5; sigsq init 1e-16 -- much better
-    results than the second bullet; I guess initialization responsible, but this
-    is still such a drastic change for one difference (which pushes back every
-    other random draw)
-      - how on earth is this going so well, when ETA_COEF is so high (and hence
-      signal should be drowned out)?
-    * det vs unif; sigsq = 1.5; ETA_COEF = 0.01 - so now there's at least
-    some signal, but large sigsq still may be an issue
-      - Interestingly, they both do quite well, though det occasionally anti-optimizes.
-      It seems the algorithms are able to recover the signal amid strong noise in
-      sampling of beta, but not so much a complete lack of expertise
-    * same as above but now on BOLTZ data:
-      - det does worse but still better than random, unif does *better*...
-
-
-
-
-Did a sanity check with junk data (0s for all states and actions) - unif sucks
-with this input, so it's not cheating evidently (*)
-
-Maybe also check on junk data less trivial than above - demonstrator equally
-likely to take each action in each state
-
-
-Trying on random data when D = 8 makes unif indistinguishable (in total reward)
-from random algo. So I guess this problem scales with D...
-
-Switched to uniform distribution to generate theta and now it's finally not
-working on random data
-'''
 
 def dict_match(nums):
     return '(' + ')|('.join([str(i) + '\$' for i in nums]) + ')'
@@ -1632,14 +1138,82 @@ def summary():
     df = pd.DataFrame.from_dict(dfdict)
     return df
 
+
+#%%
+
+# see_trajectory(rewards, np.array(traj_data[0])[0,0])
+
+'''
+    * Maybe test sample complexity necessary to get some epsilon-close results,
+     plot against (1) size of grid world, (2) amt of noise, (3) coef for mu?
+     * count of states where myo best and opt best differ
+     
+QUALITATIVE NOTES:
+    * The varying-beta model appears to do better than uniform when rewards are
+    sparse *and* states-of-high-expertise by the demonstrators are also sparse,
+    *and* the coverage of these states-of-high-expertise is wide (e.g. all 4
+    corners).
+     - In sparse-reward MDP, results seem to be hit-or-miss, as you'd expect;
+     either the algo places highest reward on the right spot and pursues it above
+     all others - thus doing well - or it doesn't, and does quite poorly.
+     - Increasing coverage of the state space by the experts' high betas seems
+     to improve performance of both det and unif (they get to be higher fraction
+     of optimal in cumulative return). But increasing this coverage helps the
+     unif model a lot more than det, apparently.
+    * All the models seem to do better than random even when there are larger
+    chunks of the state space on which the demonstrators act randomly.
+    * Slightly slower to train on higher Ti:N ratio, holding Ti*N constant -
+    will see if performance changes, though
+    
+Future directions:
+    * sliding scale of a parameter for how myopic the experts are - expected
+    k-step rewards...
+    * robustness - avoiding cases where the algo hallucinates high pos reward
+    in a high NEGATIVE state(s) and anti-optimizes
+    * test on simulations from experts whose beta functions mimick different
+    cognitive biases
+'''
+
+
+######
+'''
+DEFAULTS FOR PARAMS:
+    D=16 #8 #6x
+    MOVE_NOISE = 0.05
+    INTERCEPT_ETA = 0
+    WEIGHT = 2
+    COEF = 0.1
+    ETA_COEF = 0.01
+    GAM = 0.9
+    M = 20 # number of actions used for importance sampling
+    N = 100 #20 #100 #2000 # number of trajectories per expert
+    J = 20 #10 # should be 30....
+    T = 50
+    Ti = 20 # length of trajectory
+    B = 50 #100 # number of betas/normals sampled for expectation
+    Q_ITERS = 30000 #50000
+    learn_rate = 0.5 #0.0001
+    cr_reps = 10
+    reps = 5
+    sigsqs = 0.1 for all experts
+
+'''
+######
+
     
 df = summary()
-standard_filt_N = {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1, 'test_data': 'myo'}
-boltz_filt_N = {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1, 'test_data': 'boltz'}
-standard_filt_ETA = {'N': 100, 'ex_sigsqs': 0.1, 'test_data': 'myo'}
-boltz_filt_ETA = {'N': 100, 'ex_sigsqs': 0.1, 'test_data': 'boltz'}
-standard_filt_sig = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'myo'}
-boltz_filt_sig = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'boltz'}
+standard_filt_N = {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1, 'test_data': 'myo',
+                    'INTERCEPT_ETA': 0}
+boltz_filt_N = {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1, 'test_data': 'boltz',
+                    'INTERCEPT_ETA': 0}
+standard_filt_ETA = {'N': 100, 'ex_sigsqs': 0.1, 'test_data': 'myo',
+                    'INTERCEPT_ETA': 0}
+boltz_filt_ETA = {'N': 100, 'ex_sigsqs': 0.1, 'test_data': 'boltz',
+                    'INTERCEPT_ETA': 0}
+standard_filt_sig = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'myo',
+                    'INTERCEPT_ETA': 0}
+boltz_filt_sig = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'boltz',
+                    'INTERCEPT_ETA': 0}
 
 
 def average_within_seed(df, filt_dict=False, filter_eta=False,
@@ -1749,37 +1323,16 @@ RESULTS FROM results_var_hyper:
 58)[seed 120, boltz] N varying from 20, 50, 100
 59)[seed 160, boltz] N varying from 20, 50, 100
 60)[seed 200, boltz] N varying from 20, 50, 100
-
-
-                 
-                 
-The difference between 24 and 29 is INCREDIBLE - does much better when data
-are boltz despite not modeling the demonstrators as such                 
+61)[seed 20] INTERCEPT_ETA = -1
+62)[seed 60] INTERCEPT_ETA = -1
+63)[seed 100] INTERCEPT_ETA = -1  
+64)[seed 140] INTERCEPT_ETA = -1
+65)[seed 180] INTERCEPT_ETA = -1
+66)[seed 40] INTERCEPT_ETA = -1   
+67)[seed 80] INTERCEPT_ETA = -1   
+68)[seed 120] INTERCEPT_ETA = -1 
+69)[seed 160] INTERCEPT_ETA = -1
+70)[seed 200] INTERCEPT_ETA = -1   
+71)[seed 20, boltz] INTERCEPT_ETA = -1
+72)[seed 60, boltz] INTERCEPT_ETA = -1
 '''
-
-'''
-Include results from random data and from very high ETA_COEF as evidence that
-the algos aren't cheating
--- ETA_COEF=0.5 results confirm this
-'''
-
-
-'''
-MOVE_NOISE = 0.05
-    INTERCEPT_ETA = 0
-    WEIGHT = 2
-    COEF = 0.1
-    ETA_COEF = 0.01 #0.05 #0.1 #1
-    GAM = 0.9
-    M = 20 # number of actions used for importance sampling
-    N = 100#20 #100 #2000 # number of trajectories per expert
-    J = 20#10 # should be 30....
-    T = 50
-    Ti = 20 # length of trajectory
-    B = 50#100 # number of betas/normals sampled for expectation
-    INTERCEPT_REW = -1
-    learn_rate = 0.5 #0.0001
-    cr_reps = 10
-    reps = 5
-'''
-
