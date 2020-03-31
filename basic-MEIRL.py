@@ -1103,48 +1103,7 @@ seeds_2 = [120,140,160,180,200]
 
 # see_trajectory(rewards, np.array(traj_data[0])[0,0])
 
-# promising results when using N = 50 and reps = 5, but might
-# not replicate...
-## ^ Yeah, when tried to replicate, the AEVB occasionally gave lackluster results
-## But! Still on average much better than uniform model:
-## mean(AEVB_tot) = 1231.5
-## mean(unif_tot) = 621.5
-# Another rep: no better than random...
-
-# when less sparse reward, does *worse* than uniform model...
-# Problem seems to boil down to degeneracy - many thetas have close-to-optimal ELBO
-# (about -290 for true params vs -330 for theta_star that gives wrong answer)
-# yet assign drastically different reward profiles, e.g. bad state becomes good
-# and good becomes bad
-# **** lemme see if increasing sample size changes this
-# **** yeah it widens gap a bit, although not much; now its -273 for true, -320 for a
-# **** very wrong answer
-
-# works p well even under misspecification for D = 8
-# doesn't really work on D = 16 grid
-
 '''
-To do:
-    * misspec of reward function?
-    * misspec of beta mean?
-    * more/longer trajectories? Could shorten the training traj to speed training
-     but have longer test trajectories to see if long-term reward is improved
-    * try different mu functions for the locally optimal experts; maybe
-     need some threshold of optimality for each expert to get good results
-     -- Looks like when ETA_COEF is set to 0.1 (i.e. very little area covered
-     by optimal experts), the results (on seed 30) are consistently a wide
-     negative blob at the top! Similar results for AEVB. Det does not do well
-     here.
-     -- The uniform model has no such regularity. Maybe that's the key; the
-     well-specified algorithms are perhaps less robust because they consistently
-     reach a wrong answer (when the noise-to-signal ratio is just too high).
-     But nonetheless the uniform model seems to reach something consistently
-     better than random, indeed much better
-     -- maybe learn_rate...
-    * Try restricting beta to be positive - in principle, quite hard to
-      distinguish a state with high positive reward being successfully pursued
-      by most experts from a state with high neg reward being anti-optimized
-         --- done
     * Vary:
         - sample size -- see how many samples necessary to get good performance
             -- tentatively looks like N=100 each is sufficient for det to work,
@@ -1155,16 +1114,6 @@ To do:
      * May need to force reward function to be such that doing well in the MDP
      is hard, i.e. not sufficient to just get one or two "nodes" of the reward
      space correct
-     * Compare performance for different split of steps in Ti vs N (length vs
-     number of trajectories)
-     * Check action-value distribution vs next-step reward distribution, check
-     that the reason robust to Boltz isn't just that those distributions are
-     v similar
-         -- sort of done but need to organize this
-     * compare diff sigsqs for different experts
-     * test on MCMC...
-     * vary seed used for everything *after* definition of the MDP
-     * increase number of features, for same size of MDP
      * count of states where myo best and opt best differ
      * look at learning process of meirl-unif on seed 160, boltz data, in detail, how does
      it work so well?
@@ -1487,6 +1436,9 @@ RESULTS FROM results_var_hyper:
 58)[seed 120, boltz] N varying from 20, 50, 100
 59)[seed 160, boltz] N varying from 20, 50, 100
 60)[seed 200, boltz] N varying from 20, 50, 100
+61)[seed 20] INTERCEPT_ETA = -1
+62)[seed 60] INTERCEPT_ETA = -1
+63)[seed 100] INTERCEPT_ETA = -1
 
 
                  
