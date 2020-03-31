@@ -915,7 +915,7 @@ def evaluate_all(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
         
 
 def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
-                      hyparams=HYPARAMS):
+                      hyparams=HYPARAMS, verbose=False):
     '''
     Tests all algorithms on the MDP determined by the given seed, varying
     the value of param across the list par_vals. These results are stored in
@@ -949,9 +949,10 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
           hyparams['B'], hyparams['INTERCEPT_REW'], hyparams['learn_rate'],
           hyparams['cr_reps'], hyparams['reps'], hyparams['sigsq_list'])
 
-        other_pars = {}
+        pdict = {}
 
-        other_pars['SEED_NUM'] = seed
+        pdict['SEED_NUM'] = seed
+        pdict['test_data'] = test_data
 
         d = D // 2 + 1
         state_space = np.array([(i,j) for i in range(D) for j in range(D)])
@@ -966,8 +967,8 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         p = alpha1.shape[0]
         m = 4
         
-        ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4]) # other_pars['ex_alphas'] =
-        ex_sigsqs = np.array(sigsq_list) #other_pars['ex_sigsqs'] =
+        pdict['ex_alphas'] = np.stack([alpha1, alpha2, alpha3, alpha4]) 
+        pdict['ex_sigsqs'] = np.array(sigsq_list)
         
         init_Q = np.random.rand(D, D, 4)
     
@@ -977,11 +978,12 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
             os.mkdir('hyp_results')
         os.mkdir('hyp_results/' + fname)
         
-        centers_x = np.random.choice(D, D//2) # other_pars['centers_x'] =
-        centers_y = np.random.choice(D, D//2) # other_pars['centers_y'] =
+        pdict['centers_x'] = np.random.choice(D, D//2)
+        pdict['centers_y'] = np.random.choice(D, D//2)
         
-        theta_true = 3*np.random.rand(D//2 + 1) - 2 #other_pars['theta_true'] = 
-        rewards = lin_rew_func(theta_true, state_space, centers_x, centers_y)
+        pdict['theta_true'] = 3*np.random.rand(D//2 + 1) - 2 
+        rewards = lin_rew_func(pdict['theta_true'], state_space,
+          pdict['centers_x'], pdict['centers_y'])
         sns.heatmap(rewards)
         plt.savefig('hyp_results/' + fname + '/' + 'true_reward.png')
         plt.show()
@@ -991,84 +993,47 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         
         compare_myo_opt(rewards, TP, Q, save=fname, hyp=True)
         
-        phi = np.random.rand(m,2) # other_pars['phi'] =
-        alpha = np.random.normal(size=(m,p), scale=0.05) # other_pars['alpha'] =
-        #sigsq = 1e-16 + np.zeros(m)
-        sigsq = np.random.rand(m) # other_pars['sigsq'] =
-        beta = np.random.rand(m) # other_pars['beta'] =
-        theta = np.random.normal(size=d) # other_pars['theta'] =
+        pdict['phi'] = np.random.rand(m,2)
+        pdict['alpha'] = np.random.normal(size=(m,p), scale=0.05)
+        pdict['sigsq'] = np.random.rand(m)
+        pdict['beta'] = np.random.rand(m)
+        pdict['theta'] = np.random.normal(size=d)
         
-        traj_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space,
-          action_space, TP, m)
-        boltz_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti,
-          state_space, action_space, TP, m, Q)
-        rand_data = random_data(ex_alphas, ex_sigsqs, rewards, N, Ti,
-          state_space, action_space, TP, m)
+        traj_data = make_data(pdict['ex_alphas'], pdict['ex_sigsqs'], rewards,
+          N, Ti, state_space, action_space, TP, m)
+        boltz_data = make_data(pdict['ex_alphas'], pdict['ex_sigsqs'], rewards,
+          N, Ti, state_space, action_space, TP, m, Q)
+        rand_data = random_data(pdict['ex_alphas'], pdict['ex_sigsqs'], rewards,
+          N, Ti, state_space, action_space, TP, m)
         
         if test_data == 'myo':
-            (true_tot, a_tot, b_tot, c_tot, d_tot, a_sd, b_sd, c_sd,
-             d_sd) = evaluate_all(theta, alpha, sigsq, phi, beta, traj_data,
-              TP, state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
-              opt_policy, T, rewards, init_Q, J, centers_x, centers_y,
-              cr_reps, save=['hyp_results/' + fname + '/' + fname, param])
+            dataset = traj_data
         elif test_data == 'random':
-            (true_tot, a_tot, b_tot, c_tot, d_tot, a_sd, b_sd, c_sd,
-             d_sd) = evaluate_all(theta, alpha, sigsq, phi, beta, rand_data,
-              TP, state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
-              opt_policy, T, rewards, init_Q, J, centers_x, centers_y,
-              cr_reps, save=['hyp_results/' + fname + '/' + fname, param])
+            dataset = rand_data
         else:
-            (true_tot, a_tot, b_tot, c_tot, d_tot, a_sd, b_sd, c_sd,
-             d_sd) = evaluate_all(theta, alpha, sigsq, phi, beta, boltz_data,
-              TP, state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
-              opt_policy, T, rewards, init_Q, J, centers_x, centers_y,
-              cr_reps, save=['hyp_results/' + fname + '/' + fname, param])
+            dataset = boltz_data
+
+        (pdict['true_tot'], pdict['mean MEIRL_det_tot'],
+          pdict['mean MEIRL_unif_tot'], pdict['mean AR_AEVB_tot'],
+          pdict['mean random_tot'], pdict['sd MEIRL_det_tot'],
+          pdict['sd MEIRL_unif_tot'], pdict['sd AR_AEVB_tot'],
+          pdict['sd random_tot']) = evaluate_all(pdict['theta'],
+          pdict['alpha'], pdict['sigsq'], pdict['phi'], pdict['beta'], dataset,
+          TP, state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
+          opt_policy, T, rewards, init_Q, J, pdict['centers_x'],
+          pdict['centers_y'], cr_reps,
+          save=['hyp_results/' + fname + '/' + fname, param], verbose=verbose)
             
         f = open('hyp_results/' + fname + '/' + fname + '.txt', 'w')
 
         for gvar, value in hyparams.items():
             f.write(gvar + ' = ' + str(value) + '\n')
+        for gvar, value in pdict.items():
+            if 'mean' in gvar:
+                f.write(gvar + ' = ' + str(np.mean(value)) + '\n')
+            else:
+                f.write(gvar + ' = ' + str(value) + '\n')
 
-        '''
-        f.write('D = ' + str(D) + '\n')
-        f.write('MOVE_NOISE = ' + str(MOVE_NOISE) + '\n')
-        f.write('INTERCEPT_ETA = ' + str(INTERCEPT_ETA) + '\n')
-        f.write('INTERCEPT_REW = ' + str(INTERCEPT_REW) + '\n')
-        f.write('WEIGHT = ' + str(WEIGHT) + '\n')
-        f.write('COEF = ' + str(COEF) + '\n')
-        f.write('GAM = ' + str(GAM) + '\n')
-        f.write('ETA_COEF = ' + str(ETA_COEF) + '\n')
-        f.write('M = ' + str(M) + '\n')
-        f.write('N = ' + str(N) + '\n')
-        f.write('J = ' + str(J) + '\n')
-        f.write('T = ' + str(T) + '\n')
-        f.write('Ti = ' + str(Ti) + '\n')
-        f.write('B = ' + str(B) + '\n')
-        f.write('learn_rate = ' + str(learn_rate) + '\n')
-        f.write('cr_reps = ' + str(cr_reps) + '\n')
-        f.write('reps = ' + str(reps) + '\n')
-        '''
-        f.write('centers_x = ' + str(centers_x) + '\n')
-        f.write('centers_y = ' + str(centers_y) + '\n')
-        f.write('SEED_NUM = ' + str(SEED_NUM) + '\n')
-        f.write('theta_true = ' + str(theta_true) + '\n')
-        f.write('ex_alphas = ' + str(ex_alphas) + '\n')
-        f.write('ex_sigsqs = ' + str(ex_sigsqs) + '\n')
-        f.write('alpha = ' + str(alpha) + '\n')
-        f.write('sigsq = ' + str(sigsq) + '\n')
-        f.write('theta = ' + str(theta) + '\n')
-        f.write('beta = ' + str(beta) + '\n')
-        f.write('phi = ' + str(phi) + '\n')
-        f.write('test_data = ' + str(test_data) + '\n')
-        f.write('true_tot = ' + str(true_tot) + '\n')
-        f.write('mean MEIRL_det_tot = ' + str(np.mean(a_tot)) + '\n')
-        f.write('sd MEIRL_det_tot = ' + str(a_sd) + '\n')
-        f.write('mean MEIRL_unif_tot = ' + str(np.mean(b_tot)) + '\n')
-        f.write('sd MEIRL_unif_tot = ' + str(b_sd) + '\n')
-        f.write('mean AR_AEVB_tot = ' + str(np.mean(c_tot)) + '\n')
-        f.write('sd AR_AEVB_tot = ' + str(c_sd) + '\n')
-        f.write('mean random_tot = ' + str(np.mean(d_tot)) + '\n')
-        f.write('sd random_tot = ' + str(d_sd) + '\n')
         f.close()
     
     # resetting any vars that might have changed
@@ -1108,6 +1073,7 @@ def summary():
     res_folds = [fo for fo in os.listdir('hyp_results') if re.match('.*\$', fo)]
 
     dfdict = {'ETA_COEF': [], 'N': [], 'ex_sigsqs': [], 'SEED_NUM': [],
+              'INTERCEPT_ETA': [],
               'test_data': [], 'true_tot': [], 'mean MEIRL_det_tot': [],
               'sd MEIRL_det_tot': [], 'mean MEIRL_unif_tot': [],
               'sd MEIRL_unif_tot': [], 'mean AR_AEVB_tot': [],
@@ -1139,83 +1105,6 @@ def summary():
     return df
 
 
-#%%
-
-# see_trajectory(rewards, np.array(traj_data[0])[0,0])
-
-'''
-    * Maybe test sample complexity necessary to get some epsilon-close results,
-     plot against (1) size of grid world, (2) amt of noise, (3) coef for mu?
-     * count of states where myo best and opt best differ
-     
-QUALITATIVE NOTES:
-    * The varying-beta model appears to do better than uniform when rewards are
-    sparse *and* states-of-high-expertise by the demonstrators are also sparse,
-    *and* the coverage of these states-of-high-expertise is wide (e.g. all 4
-    corners).
-     - In sparse-reward MDP, results seem to be hit-or-miss, as you'd expect;
-     either the algo places highest reward on the right spot and pursues it above
-     all others - thus doing well - or it doesn't, and does quite poorly.
-     - Increasing coverage of the state space by the experts' high betas seems
-     to improve performance of both det and unif (they get to be higher fraction
-     of optimal in cumulative return). But increasing this coverage helps the
-     unif model a lot more than det, apparently.
-    * All the models seem to do better than random even when there are larger
-    chunks of the state space on which the demonstrators act randomly.
-    * Slightly slower to train on higher Ti:N ratio, holding Ti*N constant -
-    will see if performance changes, though
-    
-Future directions:
-    * sliding scale of a parameter for how myopic the experts are - expected
-    k-step rewards...
-    * robustness - avoiding cases where the algo hallucinates high pos reward
-    in a high NEGATIVE state(s) and anti-optimizes
-    * test on simulations from experts whose beta functions mimick different
-    cognitive biases
-'''
-
-
-######
-'''
-DEFAULTS FOR PARAMS:
-    D=16 #8 #6x
-    MOVE_NOISE = 0.05
-    INTERCEPT_ETA = 0
-    WEIGHT = 2
-    COEF = 0.1
-    ETA_COEF = 0.01
-    GAM = 0.9
-    M = 20 # number of actions used for importance sampling
-    N = 100 #20 #100 #2000 # number of trajectories per expert
-    J = 20 #10 # should be 30....
-    T = 50
-    Ti = 20 # length of trajectory
-    B = 50 #100 # number of betas/normals sampled for expectation
-    Q_ITERS = 30000 #50000
-    learn_rate = 0.5 #0.0001
-    cr_reps = 10
-    reps = 5
-    sigsqs = 0.1 for all experts
-
-'''
-######
-
-    
-df = summary()
-standard_filt_N = {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1, 'test_data': 'myo',
-                    'INTERCEPT_ETA': 0}
-boltz_filt_N = {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1, 'test_data': 'boltz',
-                    'INTERCEPT_ETA': 0}
-standard_filt_ETA = {'N': 100, 'ex_sigsqs': 0.1, 'test_data': 'myo',
-                    'INTERCEPT_ETA': 0}
-boltz_filt_ETA = {'N': 100, 'ex_sigsqs': 0.1, 'test_data': 'boltz',
-                    'INTERCEPT_ETA': 0}
-standard_filt_sig = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'myo',
-                    'INTERCEPT_ETA': 0}
-boltz_filt_sig = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'boltz',
-                    'INTERCEPT_ETA': 0}
-
-
 def average_within_seed(df, filt_dict=False, filter_eta=False,
                         filter_sig=False):
     data = df
@@ -1238,8 +1127,6 @@ def average_within_seed(df, filt_dict=False, filter_eta=False,
     plt.legend(handles=dots, prop={'size': 9}, loc='lower left')
     plt.show()
     
-# to do: plot for ONE ALGO the results on all seeds with some hyparam varying    
-
     
 def varying_hyp(df, hyp, algo, filt_dict=False):
     data = df
@@ -1260,6 +1147,28 @@ def varying_hyp(df, hyp, algo, filt_dict=False):
       label=v) for i, v in enumerate(values)]
     plt.legend(handles=dots, prop={'size': 9}, loc='lower left')
     plt.show()
+
+
+#%%
+
+# see_trajectory(rewards, np.array(traj_data[0])[0,0]
+    
+df = summary()
+standard_filt_N = {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1, 'test_data': 'myo',
+                    'INTERCEPT_ETA': 0}
+boltz_filt_N = {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1, 'test_data': 'boltz',
+                    'INTERCEPT_ETA': 0}
+standard_filt_ETA = {'N': 100, 'ex_sigsqs': 0.1, 'test_data': 'myo',
+                    'INTERCEPT_ETA': 0}
+boltz_filt_ETA = {'N': 100, 'ex_sigsqs': 0.1, 'test_data': 'boltz',
+                    'INTERCEPT_ETA': 0}
+standard_filt_sig = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'myo',
+                    'INTERCEPT_ETA': 0}
+boltz_filt_sig = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'boltz',
+                    'INTERCEPT_ETA': 0}
+
+
+
 
 '''
 RESULTS FROM results_var_hyper:
@@ -1335,4 +1244,12 @@ RESULTS FROM results_var_hyper:
 70)[seed 200] INTERCEPT_ETA = -1   
 71)[seed 20, boltz] INTERCEPT_ETA = -1
 72)[seed 60, boltz] INTERCEPT_ETA = -1
+73)[seed 100, boltz] INTERCEPT_ETA = -1
+74)[seed 140, boltz] INTERCEPT_ETA = -1
+75)[seed 180, boltz] INTERCEPT_ETA = -1
+76)[seed 40, boltz] INTERCEPT_ETA = -1
+77)[seed 80, boltz] INTERCEPT_ETA = -1
+78)[seed 120, boltz] INTERCEPT_ETA = -1
+79)[seed 160, boltz] INTERCEPT_ETA = -1
+80)[seed 160, boltz] INTERCEPT_ETA = -1
 '''
