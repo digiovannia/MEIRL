@@ -398,17 +398,6 @@ def GD(phi, theta, alpha, sigsq, g_phi, g_theta, g_alpha, g_sigsq, learn_rate):
     return phi, theta, alpha, sigsq
 
 
-def y_t_nest(phi, phi_m, theta, theta_m, alpha, alpha_m, sigsq, sigsq_m, t):
-    '''
-    Making intermediate iterates for Nesterov acceleration
-    '''
-    const = (t-1)/(t+2)
-    return (phi - const*(phi - phi_m),
-            theta - const*(theta - theta_m),
-            alpha - const*(alpha - alpha_m),
-            sigsq - const*(sigsq - sigsq_m))
-
-
 ############################# Full AEVB models ###############################
 
 
@@ -444,6 +433,8 @@ def elbo(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all,
 '''
 In the gradient functions that follow, mean over an axis is for the Monte
 Carlo estimate of the expectation with respect to multivariate standard normal.
+Sum over an axis is over time steps in the trajectory, as well as over the
+4 experts in the case of theta_grad
 '''
 
 def phi_grad_ae(phi, m, Ti, normals, denom, sigsq, gZ_phi):
@@ -956,7 +947,6 @@ HYPARAMS = {'D': 16,
             'MOVE_NOISE': 0.05,
             'INTERCEPT_ETA': 0,
             'WEIGHT': 2,
-            'RESET': 20,
             'COEF': 0.1,
             'ETA_COEF': 0.01,
             'GAM': 0.9,
@@ -980,12 +970,12 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
     '''
     
     # Global params
-    global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, RESCALE, RESET, COEF
+    global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, RESCALE, COEF
     global ETA_COEF, GAM, M, N, J, T, Ti, B, INTERCEPT_REW, TP
-    (D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, RESET, COEF, ETA_COEF, GAM, M, N, J,
+    (D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, COEF, ETA_COEF, GAM, M, N, J,
       T, Ti, B, INTERCEPT_REW, learn_rate, cr_reps, reps,
       sigsq_list) = (hyparams['D'], hyparams['MOVE_NOISE'],
-      hyparams['INTERCEPT_ETA'], hyparams['WEIGHT'], hyparams['RESET'],
+      hyparams['INTERCEPT_ETA'], hyparams['WEIGHT'],
       hyparams['COEF'], hyparams['ETA_COEF'], hyparams['GAM'], hyparams['M'],
       hyparams['N'], hyparams['J'], hyparams['T'], hyparams['Ti'],
       hyparams['B'], hyparams['INTERCEPT_REW'], hyparams['learn_rate'],
@@ -1074,7 +1064,6 @@ def save_results(id_num, algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
         f.write('INTERCEPT_ETA = ' + str(INTERCEPT_ETA) + '\n')
         f.write('INTERCEPT_REW = ' + str(INTERCEPT_REW) + '\n')
         f.write('WEIGHT = ' + str(WEIGHT) + '\n')
-        f.write('RESET = ' + str(RESET) + '\n')
         f.write('COEF = ' + str(COEF) + '\n')
         f.write('GAM = ' + str(GAM) + '\n')
         f.write('ETA_COEF = ' + str(ETA_COEF) + '\n')
@@ -1115,12 +1104,12 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         hyparams[param] = par
         
         np.random.seed(SEED_NUM)
-        global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, RESCALE, RESET, COEF
+        global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, RESCALE, COEF
         global ETA_COEF, GAM, M, N, J, T, Ti, B, INTERCEPT_REW, TP
-        (D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, RESET, COEF, ETA_COEF, GAM, M, N, J,
+        (D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, COEF, ETA_COEF, GAM, M, N, J,
           T, Ti, B, INTERCEPT_REW, learn_rate, cr_reps, reps,
           sigsq_list) = (hyparams['D'], hyparams['MOVE_NOISE'],
-          hyparams['INTERCEPT_ETA'], hyparams['WEIGHT'], hyparams['RESET'],
+          hyparams['INTERCEPT_ETA'], hyparams['WEIGHT'],
           hyparams['COEF'], hyparams['ETA_COEF'], hyparams['GAM'], hyparams['M'],
           hyparams['N'], hyparams['J'], hyparams['T'], hyparams['Ti'],
           hyparams['B'], hyparams['INTERCEPT_REW'], hyparams['learn_rate'],
@@ -1195,7 +1184,6 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         f.write('INTERCEPT_ETA = ' + str(INTERCEPT_ETA) + '\n')
         f.write('INTERCEPT_REW = ' + str(INTERCEPT_REW) + '\n')
         f.write('WEIGHT = ' + str(WEIGHT) + '\n')
-        f.write('RESET = ' + str(RESET) + '\n')
         f.write('COEF = ' + str(COEF) + '\n')
         f.write('GAM = ' + str(GAM) + '\n')
         f.write('ETA_COEF = ' + str(ETA_COEF) + '\n')
@@ -1238,7 +1226,6 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
             'MOVE_NOISE': 0.05,
             'INTERCEPT_ETA': 0,
             'WEIGHT': 2,
-            'RESET': 20,
             'COEF': 0.1,
             'ETA_COEF': 0.01,
             'GAM': 0.9,
@@ -1479,7 +1466,6 @@ DEFAULTS FOR PARAMS:
     INTERCEPT_ETA = 0
     WEIGHT = 2
     RESCALE = 1   <---- getting rid of this, just alternating signs
-    RESET = 20
     COEF = 0.1
     ETA_COEF = 0.01
     GAM = 0.9
@@ -1782,7 +1768,6 @@ the algos aren't cheating
 MOVE_NOISE = 0.05
     INTERCEPT_ETA = 0
     WEIGHT = 2
-    RESET = 20
     COEF = 0.1
     ETA_COEF = 0.01 #0.05 #0.1 #1
     GAM = 0.9
