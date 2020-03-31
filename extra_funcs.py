@@ -6,6 +6,140 @@ Created on Mon Mar 23 21:04:49 2020
 @author: adigi
 """
 
+def save_results(id_num,  algo_a=AR_AEVB, algo_b=MEIRL_unif, random=False,
+                 test_data='myo', hyparams=HYPARAMS):
+    '''
+    Compares two algorithms with each other (and with ground truth reward)
+    with varying seed values, including varying reward functions
+    '''
+    
+    # Global params
+    global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, RESCALE, COEF
+    global ETA_COEF, GAM, M, N, J, T, Ti, B, INTERCEPT_REW, TP
+    (D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, COEF, ETA_COEF, GAM, M, N, J,
+      T, Ti, B, INTERCEPT_REW, learn_rate, cr_reps, reps,
+      sigsq_list) = (hyparams['D'], hyparams['MOVE_NOISE'],
+      hyparams['INTERCEPT_ETA'], hyparams['WEIGHT'],
+      hyparams['COEF'], hyparams['ETA_COEF'], hyparams['GAM'], hyparams['M'],
+      hyparams['N'], hyparams['J'], hyparams['T'], hyparams['Ti'],
+      hyparams['B'], hyparams['INTERCEPT_REW'], hyparams['learn_rate'],
+      hyparams['cr_reps'], hyparams['reps'], hyparams['sigsq_list'])
+    d = D // 2 + 1
+    state_space = np.array([(i,j) for i in range(D) for j in range(D)])
+    action_space = list(range(4))
+    TP = transition(state_space, action_space)
+    
+    alpha1 = np.array([WEIGHT, 0, 0, 0, 1])
+    alpha2 = np.array([0, 0, WEIGHT, 0, 1])
+    alpha3 = np.array([0, 0, 0, WEIGHT, 1]) 
+    alpha4 = np.array([0, WEIGHT, 0, 0, 1])
+    
+    p = alpha1.shape[0]
+    m = 4
+    
+    ex_alphas = np.stack([alpha1, alpha2, alpha3, alpha4])
+    ex_sigsqs = np.array(sigsq_list)
+    
+    init_Q = np.random.rand(D,D,4)
+    
+    for seed in seeds:
+        filename = '_'.join(str(datetime.datetime.now()).split())
+        fname = str(id_num) + '$' + filename.replace(':', '--')
+        os.mkdir('results/' + fname)
+        
+        SEED_NUM = seed#100#50#80#70#60
+        np.random.seed(SEED_NUM) #50) #40) #30) #20) #10)
+        
+        centers_x = np.random.choice(D, D//2)
+        centers_y = np.random.choice(D, D//2)
+        
+        theta_true = 3*np.random.rand(D // 2 + 1) - 2 #np.random.normal(size = D // 2 + 1, scale=3)
+        rewards = lin_rew_func(theta_true, state_space, centers_x, centers_y)
+        sns.heatmap(rewards)
+        plt.savefig('results/' + fname + '/' + 'true_reward.png')
+        plt.show()
+        
+        opt_policy, Q = value_iter(state_space, action_space, rewards, TP, GAM, 1e-5)
+        
+        compare_myo_opt(rewards, TP, Q, save=fname)
+        
+        phi = np.random.rand(m,2)
+        alpha = np.random.normal(size=(m,p), scale=0.05)
+        #sigsq = 1e-16 + np.zeros(m)
+        sigsq = np.random.rand(m)
+        beta = np.random.rand(m)
+        theta = np.random.normal(size=d) #np.zeros_like(theta_true)
+        
+        traj_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
+                             TP, m)
+        boltz_data = make_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
+                             TP, m, Q)
+        dumb_data = random_data(ex_alphas, ex_sigsqs, rewards, N, Ti, state_space, action_space,
+                             TP, m)
+        
+        alg_a_str = str(algo_a).split()[1]
+        if random:
+            alg_b_str = 'random'
+        else:
+            alg_b_str = str(algo_b).split()[1]
+        
+        if test_data == 'myo':
+            true_tot, a_tot, b_tot, a_sd, b_sd = evaluate_general(theta, alpha, sigsq, phi, beta, 
+                                                         traj_data,
+              TP, state_space,
+              action_space, B, m, M, Ti, N, learn_rate, reps, opt_policy, T,
+              rewards, init_Q, J, centers_x, centers_y,
+              cr_reps, algo_a, algo_b, random=random,
+              save=['results/' + fname + '/' + fname,
+                    alg_a_str + '__' + alg_b_str])
+        else:
+            true_tot, a_tot, b_tot, a_sd, b_sd = evaluate_general(theta, alpha, sigsq, phi, beta,
+                                                          boltz_data,
+              TP, state_space,
+              action_space, B, m, M, Ti, N, learn_rate, reps, opt_policy, T,
+              rewards, init_Q, J, centers_x, centers_y,
+              cr_reps, algo_a, algo_b, random=random,
+              save=['results/' + fname + '/' + fname,
+                    alg_a_str + '__' + alg_b_str])
+            
+        f = open('results/' + fname + '/' + fname + '.txt', 'w')
+        f.write('D = ' + str(D) + '\n')
+        f.write('MOVE_NOISE = ' + str(MOVE_NOISE) + '\n')
+        f.write('INTERCEPT_ETA = ' + str(INTERCEPT_ETA) + '\n')
+        f.write('INTERCEPT_REW = ' + str(INTERCEPT_REW) + '\n')
+        f.write('WEIGHT = ' + str(WEIGHT) + '\n')
+        f.write('COEF = ' + str(COEF) + '\n')
+        f.write('GAM = ' + str(GAM) + '\n')
+        f.write('ETA_COEF = ' + str(ETA_COEF) + '\n')
+        f.write('M = ' + str(M) + '\n')
+        f.write('N = ' + str(N) + '\n')
+        f.write('J = ' + str(J) + '\n')
+        f.write('T = ' + str(T) + '\n')
+        f.write('Ti = ' + str(Ti) + '\n')
+        f.write('B = ' + str(B) + '\n')
+        f.write('learn_rate = ' + str(learn_rate) + '\n')
+        f.write('cr_reps = ' + str(cr_reps) + '\n')
+        f.write('reps = ' + str(reps) + '\n')
+        f.write('centers_x = ' + str(centers_x) + '\n')
+        f.write('centers_y = ' + str(centers_y) + '\n')
+        f.write('SEED_NUM = ' + str(SEED_NUM) + '\n')
+        f.write('theta_true = ' + str(theta_true) + '\n')
+        f.write('ex_alphas = ' + str(ex_alphas) + '\n')
+        f.write('ex_sigsqs = ' + str(ex_sigsqs) + '\n')
+        f.write('alpha = ' + str(alpha) + '\n')
+        f.write('sigsq = ' + str(sigsq) + '\n')
+        f.write('theta = ' + str(theta) + '\n')
+        f.write('beta = ' + str(beta) + '\n')
+        f.write('phi = ' + str(phi) + '\n')
+        f.write('test_data = ' + str(test_data) + '\n')
+            
+        f.write('true_tot = ' + str(true_tot) + '\n')
+        f.write('mean algo_a_tot = ' + str(np.mean(a_tot)) + '\n')
+        f.write('sd algo_a_tot = ' + str(a_sd) + '\n')
+        f.write('mean algo_b_tot = ' + str(np.mean(b_tot)) + '\n')
+        f.write('sd algo_b_tot = ' + str(b_sd) + '\n')
+        f.close()
+
 
 def theta_grad_det_reg(lam, theta, data, beta, state_space, glogZ_theta, centers_x, centers_y):
     gradR = grad_lin_rew(data, state_space, centers_x, centers_y) # m x d x Ti 
