@@ -209,7 +209,7 @@ def synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
     for _ in range(Ti-1):
         s = grid_step(s,a)
         states.append(s)
-        beta = np.dot(eta(s), alpha[i]) + np.random.normal(0, np.sqrt(sigsq[i]))
+        beta = np.dot(eta(s), alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
         if type(Q) == np.ndarray:
             a = np.random.choice(action_space, p = softmax(Q[s[0],s[1]], beta))
         else:
@@ -1104,19 +1104,9 @@ seeds_2 = [120,140,160,180,200]
 # see_trajectory(rewards, np.array(traj_data[0])[0,0])
 
 '''
-    * Vary:
-        - sample size -- see how many samples necessary to get good performance
-            -- tentatively looks like N=100 each is sufficient for det to work,
-            even N=20! N=20 also sufficient for unif
-        - sigma -- maybe true model will outperform uniform when high variance?
     * Maybe test sample complexity necessary to get some epsilon-close results,
      plot against (1) size of grid world, (2) amt of noise, (3) coef for mu?
-     * May need to force reward function to be such that doing well in the MDP
-     is hard, i.e. not sufficient to just get one or two "nodes" of the reward
-     space correct
      * count of states where myo best and opt best differ
-     * look at learning process of meirl-unif on seed 160, boltz data, in detail, how does
-     it work so well?
      
 QUALITATIVE NOTES:
     * Good performance is basically elusive in large D MDPs when beta is allowed
@@ -1438,38 +1428,11 @@ RESULTS FROM results_var_hyper:
 60)[seed 200, boltz] N varying from 20, 50, 100
 61)[seed 20] INTERCEPT_ETA = -1
 62)[seed 60] INTERCEPT_ETA = -1
-63)[seed 100] INTERCEPT_ETA = -1
-
-
-                 
-                 
-The difference between 24 and 29 is INCREDIBLE - does much better when data
-are boltz despite not modeling the demonstrators as such                 
+63)[seed 100] INTERCEPT_ETA = -1  
+64)[seed 140] INTERCEPT_ETA = -1
+65)[seed 180] INTERCEPT_ETA = -1
+66)[seed 40] INTERCEPT_ETA = -1   
+67)[seed 80] INTERCEPT_ETA = -1   
+68)[seed 120] INTERCEPT_ETA = -1 
+69)[seed 160] INTERCEPT_ETA = -1   
 '''
-
-'''
-Include results from random data and from very high ETA_COEF as evidence that
-the algos aren't cheating
--- ETA_COEF=0.5 results confirm this
-'''
-
-
-'''
-MOVE_NOISE = 0.05
-    INTERCEPT_ETA = 0
-    WEIGHT = 2
-    COEF = 0.1
-    ETA_COEF = 0.01 #0.05 #0.1 #1
-    GAM = 0.9
-    M = 20 # number of actions used for importance sampling
-    N = 100#20 #100 #2000 # number of trajectories per expert
-    J = 20#10 # should be 30....
-    T = 50
-    Ti = 20 # length of trajectory
-    B = 50#100 # number of betas/normals sampled for expectation
-    INTERCEPT_REW = -1
-    learn_rate = 0.5 #0.0001
-    cr_reps = 10
-    reps = 5
-'''
-
