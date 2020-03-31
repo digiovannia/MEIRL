@@ -1,5 +1,6 @@
 import numpy as np 
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import seaborn as sns
 import pandas as pd
 import datetime
@@ -1603,6 +1604,7 @@ working on random data
 def dict_match(nums):
     return '(' + ')|('.join([str(i) + '\$' for i in nums]) + ')'
 
+
 def summary():
     '''
     Using results from results_var_hyper, generates summary data and plots for:
@@ -1634,28 +1636,72 @@ def summary():
                             if key == 'ex_sigsqs':
                                 dfdict[key].append(float(val[1:val.find(' ')]))
                             else:
-                                if key == 'N':
+                                if key in ['SEED_NUM','N']:
                                     dfdict[key].append(int(val))
-                                elif key in ['SEED_NUM', 'test_data']:
+                                elif key == 'test_data':
                                     dfdict[key].append(val)
                                 else:
                                     dfdict[key].append(float(val))
                                 
     df = pd.DataFrame.from_dict(dfdict)
     return df
+
     
 df = summary()
-'''
-plt.scatter(df['SEED_NUM'], df['mean MEIRL_det_tot'])
-plt.scatter(df['SEED_NUM'], df['mean MEIRL_unif_tot'], c='r')
-'''
-seedmeans = (df.groupby('SEED_NUM')['mean MEIRL_det_tot']).mean()
+standard_filt_N = {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1, 'test_data': 'myo'}
+boltz_filt_N = {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1, 'test_data': 'boltz'}
+standard_filt_ETA = {'N': 100, 'ex_sigsqs': 0.1, 'test_data': 'myo'}
+boltz_filt_ETA = {'N': 100, 'ex_sigsqs': 0.1, 'test_data': 'boltz'}
+standard_filt_sig = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'myo'}
+boltz_filt_sig = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'boltz'}
 
-plt.show()
+
+def average_within_seed(df, filt_dict=False, filter_eta=False,
+                        filter_sig=False):
+    data = df
+    if filt_dict:
+        for key, val in filt_dict.items():
+            data = data[data[key] == val]
+    if filter_eta:
+        data = data[data['ETA_COEF'] != 0.5]
+    if filter_sig:
+        data = data[data['ex_sigsqs'] != 5] 
+    seedmeans = (data.groupby('SEED_NUM')).mean()
+    performance =['true_tot', 'mean MEIRL_det_tot', 'mean MEIRL_unif_tot',
+                  'mean AR_AEVB_tot', 'mean random_tot']
+    colors = ['b', 'r', 'g', 'k', 'm']
+    for i in range(len(performance)):
+        snum = seedmeans.index - (2 - i)
+        plt.scatter(snum, seedmeans[performance[i]], c=colors[i])
+    dots = [mpatches.Patch(color=colors[i],
+      label=performance[i]) for i in range(len(performance))]
+    plt.legend(handles=dots, prop={'size': 9}, loc='lower left')
+    plt.show()
+    
+# to do: plot for ONE ALGO the results on all seeds with some hyparam varying    
+
+    
+def varying_hyp(df, hyp, algo, filt_dict=False):
+    data = df
+    if filt_dict:
+        for key, val in filt_dict.items():
+            data = data[data[key] == val]
+    data_filts = {v: data[data[hyp] == v].groupby('SEED_NUM').mean() for v in data[hyp].unique()}
+    colors = ['b', 'r', 'g', 'k', 'm']
+    mstr = 'mean ' + algo + '_tot'
+    sdstr = 'sd ' + algo + '_tot'
+    values = sorted(data[hyp].unique())
+    for i, v in enumerate(values):
+        snum = data_filts[v].index - (3 - 3*i)
+        plt.scatter(snum, data_filts[v][mstr], c=colors[i])
+        plt.errorbar(snum, data_filts[v][mstr],
+          yerr=2*data_filts[v][sdstr], fmt='none', c=colors[i])
+    dots = [mpatches.Patch(color=colors[i],
+      label=v) for i, v in enumerate(values)]
+    plt.legend(handles=dots, prop={'size': 9}, loc='lower left')
+    plt.show()
 
 '''
-[need to test all 10 seeds; vary sigsq, ETA_COEF, N?]
-
 RESULTS FROM results_var_hyper:
 1) [seed 20] sigsq varying from 0.01, 0.1, 1, 5 --- good candidate for boltz comparison
 2) [seed 60] sigsq varying from 0.01, 0.1, 1, 5
@@ -1671,7 +1717,7 @@ RESULTS FROM results_var_hyper:
 12) [seed 60] ETA_COEF varying from 0.01, 0.05, 0.5
 13) [seed 100] ETA_COEF varying from 0.01, 0.05, 0.5
 14) [seed 140] ETA_COEF varying from 0.01, 0.05, 0.5
-  15) [seed 180] ETA_COEF varying from 0.01, 0.05, 0.5
+15) [seed 180] ETA_COEF varying from 0.01, 0.05, 0.5
 16) [seed 20, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
 17) [seed 60, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
 18) [seed 100, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
@@ -1716,20 +1762,13 @@ RESULTS FROM results_var_hyper:
 57)[seed 80, boltz] N varying from 20, 50, 100
 58)[seed 120, boltz] N varying from 20, 50, 100
 59)[seed 160, boltz] N varying from 20, 50, 100
+60)[seed 200, boltz] N varying from 20, 50, 100
 
 
                  
                  
 The difference between 24 and 29 is INCREDIBLE - does much better when data
 are boltz despite not modeling the demonstrators as such                 
-                 
-                 
-                 [seed 20] N varying from 20, 50, 100
-
-                 
-                 
-                 
-ETA_COEF varying from 0.01, 0.05, 0.5
 '''
 
 '''
