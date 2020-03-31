@@ -1093,11 +1093,51 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
             'sigsq_list': [0.1, 0.1, 0.1, 0.1]}
 
 
+def dict_match(nums):
+    return '(' + ')|('.join([str(i) + '\$' for i in nums]) + ')'
 
 
+def summary():
+    '''
+    Using results from results_var_hyper, generates summary data and plots for:
+    1) X = sigsq, Y = averages over all MDPs [myo and boltz]
+    2) X = ETA, Y = ditto
+    3) For each MDP: averages over hyperparams
+    4
+    '''
+    res_folds = [fo for fo in os.listdir('hyp_results') if re.match('.*\$', fo)]
 
-seeds_1 = [20,40,60,80,100]
-seeds_2 = [120,140,160,180,200]
+    dfdict = {'ETA_COEF': [], 'N': [], 'ex_sigsqs': [], 'SEED_NUM': [],
+              'test_data': [], 'true_tot': [], 'mean MEIRL_det_tot': [],
+              'sd MEIRL_det_tot': [], 'mean MEIRL_unif_tot': [],
+              'sd MEIRL_unif_tot': [], 'mean AR_AEVB_tot': [],
+              'sd AR_AEVB_tot': [], 'mean random_tot': [],
+              'sd random_tot': []}
+    
+    for fo in res_folds:
+        direc = 'hyp_results/' + fo
+        files = os.listdir(direc)
+        if len(files) == 5: # indicates all the necessary data was recorded:
+            textfile = sorted(os.listdir(direc))[0]
+            with open(direc + '/' + textfile) as f:
+                for line in f:
+                    if '=' in line:
+                        key = line[0:(line.find('=')-1)]
+                        if key in dfdict.keys():
+                            val = line[(line.find('=')+2):(len(line)-1)]
+                            if key == 'ex_sigsqs':
+                                dfdict[key].append(float(val[1:val.find(' ')]))
+                            else:
+                                if key in ['SEED_NUM','N']:
+                                    dfdict[key].append(int(val))
+                                elif key == 'test_data':
+                                    dfdict[key].append(val)
+                                else:
+                                    dfdict[key].append(float(val))
+                                
+    df = pd.DataFrame.from_dict(dfdict)
+    return df
+
 
 #%%
 
@@ -1109,8 +1149,6 @@ seeds_2 = [120,140,160,180,200]
      * count of states where myo best and opt best differ
      
 QUALITATIVE NOTES:
-    * Good performance is basically elusive in large D MDPs when beta is allowed
-    to be negative.
     * The varying-beta model appears to do better than uniform when rewards are
     sparse *and* states-of-high-expertise by the demonstrators are also sparse,
     *and* the coverage of these states-of-high-expertise is wide (e.g. all 4
@@ -1162,161 +1200,20 @@ DEFAULTS FOR PARAMS:
 '''
 ######
 
-
-'''
-Results I've recorded:
-    
-seeds 20,40,60,80,100
-19) ETA_COEF = 5, all suck
-20) 
-21) like #20 but BOLTZ:
- * seed 100 has many states where best myopic action is different from
- best long-term action, yet both algos work very well on the Boltzmann data!
-22)               
-23) like #20 but Ti = 50; interestingly the results barely change for seed 20, seems
-                  insensitive to trajectory length at least above 20 - good
-                  news for sample complexity
- - or maybe not, seed 40, 60 det takes a big hit; on 80 both do worse.
- - helps on seed 100 tho
-24) now Ti = 21, trying to see if just extremely sensitive to change in seed order
- - not *too* drastic a change from #20
- - pretty strong change (~400 difference) from #20 on seed 60
- - I guess not surprising since this shifts back the random seed determining
-   start states -- could try to make this consistent...?
-                
-   
-seeds 120,140,160,180,200
-25) like #20
-26) like #23
- - both algos *beat the expert* in seed 200!
-                  
-
-Added gradient clipping to all algos for >= 23!                  
-                  
-                  
-### 100s are results using thetas drawn from uniform, apparently no longer
-### have issue where unif does better than random when trained on random data
-### * Note that for these trials, the unif model uses different Nesterov than
-### others
-
-100) meirl_unif vs random  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1
-101) meirl_det vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1
-102) meirl_det vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_2
-103) meirl_det vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1; boltz
-104) meirl_det vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_2; boltz
-105) AR_AEVB vs meirl_unif  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1
-
-
-
-
-                             # AFTER MODIFYING UNIF TO USE FISTA #
-200) meirl_unif vs random  ;  INTERCEPT_REW = -1, sigsqs = 1.5; seeds_1 
-201) AR_AEVB vs ann_AEVB  ;  INTERCEPT_REW = -1, sigsqs = 0.1; seeds_1 
-                  
-    
-**********(NOTE: MAY NEED TO REDO EVERYTHING UNDER #100)***************
-    
-    * det vs random; sigsq = 1.5
-    * det vs unif; sigsq = 1.5; ETA_COEF = 5
-     - mostly sucks, but this isn't surprising bc noise drowns it out; this is
-     good, means unif isn't cheating
-    * det vs AR_AEVB; sigsq = 0.8 - both suck but AEVB sometimes does well
-    * det vs AR_AEVB; sigsq = 0.1 - det consistently sucks here
-    * det vs AR_AEVB; sigsq = 0.01 - still det sucks, weird, it used to work
-    * det vs AR_AEVB; sigsq = 0.01, learn_rate = 0.0001 - barely changes from
-    init_theta so both are consistently bad
-    
-    * det vs AR_AEVB; sigsq = 0.01; learn_rate = 0.1; init sigsq = 0;
-    N = 500 - now AEVB seems to do much better on all seeds; but det
-    does a bit worse;
-    * AR_AEVB vs random; sigsq = 0.01; learn_rate = 0.1; init sigsq = 1e-16; N = 2000:
-        extra samples don't help, in fact does worse than with N = 500
-    * unif vs random; sigsq = 2; init sigsq = 1e-16; ETA_COEF = 5 -- there should
-    be basically no signal for the algorithm to learn from here...
-    * det vs unif; sigsq = 2; ETA_COEF = 5; sigsq init 1e-16 -- much better
-    results than the second bullet; I guess initialization responsible, but this
-    is still such a drastic change for one difference (which pushes back every
-    other random draw)
-      - how on earth is this going so well, when ETA_COEF is so high (and hence
-      signal should be drowned out)?
-    * det vs unif; sigsq = 1.5; ETA_COEF = 0.01 - so now there's at least
-    some signal, but large sigsq still may be an issue
-      - Interestingly, they both do quite well, though det occasionally anti-optimizes.
-      It seems the algorithms are able to recover the signal amid strong noise in
-      sampling of beta, but not so much a complete lack of expertise
-    * same as above but now on BOLTZ data:
-      - det does worse but still better than random, unif does *better*...
-
-
-
-
-Did a sanity check with junk data (0s for all states and actions) - unif sucks
-with this input, so it's not cheating evidently (*)
-
-Maybe also check on junk data less trivial than above - demonstrator equally
-likely to take each action in each state
-
-
-Trying on random data when D = 8 makes unif indistinguishable (in total reward)
-from random algo. So I guess this problem scales with D...
-
-Switched to uniform distribution to generate theta and now it's finally not
-working on random data
-'''
-
-def dict_match(nums):
-    return '(' + ')|('.join([str(i) + '\$' for i in nums]) + ')'
-
-
-def summary():
-    '''
-    Using results from results_var_hyper, generates summary data and plots for:
-    1) X = sigsq, Y = averages over all MDPs [myo and boltz]
-    2) X = ETA, Y = ditto
-    3) For each MDP: averages over hyperparams
-    4
-    '''
-    res_folds = [fo for fo in os.listdir('hyp_results') if re.match('.*\$', fo)]
-
-    dfdict = {'ETA_COEF': [], 'N': [], 'ex_sigsqs': [], 'SEED_NUM': [],
-              'test_data': [], 'true_tot': [], 'mean MEIRL_det_tot': [],
-              'sd MEIRL_det_tot': [], 'mean MEIRL_unif_tot': [],
-              'sd MEIRL_unif_tot': [], 'mean AR_AEVB_tot': [],
-              'sd AR_AEVB_tot': [], 'mean random_tot': [],
-              'sd random_tot': []}
-    
-    for fo in res_folds:
-        direc = 'hyp_results/' + fo
-        files = os.listdir(direc)
-        if len(files) == 5: # indicates all the necessary data was recorded:
-            textfile = sorted(os.listdir(direc))[0]
-            with open(direc + '/' + textfile) as f:
-                for line in f:
-                    if '=' in line:
-                        key = line[0:(line.find('=')-1)]
-                        if key in dfdict.keys():
-                            val = line[(line.find('=')+2):(len(line)-1)]
-                            if key == 'ex_sigsqs':
-                                dfdict[key].append(float(val[1:val.find(' ')]))
-                            else:
-                                if key in ['SEED_NUM','N']:
-                                    dfdict[key].append(int(val))
-                                elif key == 'test_data':
-                                    dfdict[key].append(val)
-                                else:
-                                    dfdict[key].append(float(val))
-                                
-    df = pd.DataFrame.from_dict(dfdict)
-    return df
-
     
 df = summary()
-standard_filt_N = {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1, 'test_data': 'myo'}
-boltz_filt_N = {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1, 'test_data': 'boltz'}
-standard_filt_ETA = {'N': 100, 'ex_sigsqs': 0.1, 'test_data': 'myo'}
-boltz_filt_ETA = {'N': 100, 'ex_sigsqs': 0.1, 'test_data': 'boltz'}
-standard_filt_sig = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'myo'}
-boltz_filt_sig = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'boltz'}
+standard_filt_N = {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1, 'test_data': 'myo',
+                    'INTERCEPT_ETA': 0}
+boltz_filt_N = {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1, 'test_data': 'boltz',
+                    'INTERCEPT_ETA': 0}
+standard_filt_ETA = {'N': 100, 'ex_sigsqs': 0.1, 'test_data': 'myo',
+                    'INTERCEPT_ETA': 0}
+boltz_filt_ETA = {'N': 100, 'ex_sigsqs': 0.1, 'test_data': 'boltz',
+                    'INTERCEPT_ETA': 0}
+standard_filt_sig = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'myo',
+                    'INTERCEPT_ETA': 0}
+boltz_filt_sig = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'boltz',
+                    'INTERCEPT_ETA': 0}
 
 
 def average_within_seed(df, filt_dict=False, filter_eta=False,
@@ -1434,5 +1331,8 @@ RESULTS FROM results_var_hyper:
 66)[seed 40] INTERCEPT_ETA = -1   
 67)[seed 80] INTERCEPT_ETA = -1   
 68)[seed 120] INTERCEPT_ETA = -1 
-69)[seed 160] INTERCEPT_ETA = -1   
+69)[seed 160] INTERCEPT_ETA = -1
+70)[seed 200] INTERCEPT_ETA = -1   
+71)[seed 20, boltz] INTERCEPT_ETA = -1
+72)[seed 60, boltz] INTERCEPT_ETA = -1
 '''
