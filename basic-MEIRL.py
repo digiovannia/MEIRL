@@ -1,6 +1,7 @@
 import numpy as np 
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from matplotlib.lines import Line2D
 import seaborn as sns
 import pandas as pd
 import datetime
@@ -537,7 +538,7 @@ def logZ(sigsq, normals, meanvec, denom, impa, reward_est, data, M, TP, R_all,
     return logZvec, gZ_theta, gZ_alpha, gZ_sigsq, gZ_phi
 
 
-def AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
+def MEIRL_AE(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
          plot=False):
     '''
@@ -885,7 +886,7 @@ def evaluate_all(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
         tb = MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP,
           state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
           centers_x, centers_y)[0]
-        tc = AR_AEVB(theta, alpha, sigsq, phi, beta, traj_data, TP,
+        tc = MEIRL_AE(theta, alpha, sigsq, phi, beta, traj_data, TP,
           state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
           centers_x, centers_y)[0]
         td = random_algo(theta, alpha, sigsq, phi, beta, traj_data, TP,
@@ -931,7 +932,7 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
      * blue = policy trained on ground truth reward
      * red = MEIRL_det
      * green = MEIRL_unif
-     * black = AR_AEVB
+     * black = MEIRL_AE
      * magenta = random theta
     '''
     SEED_NUM = seed
@@ -1076,8 +1077,8 @@ def summary():
               'INTERCEPT_ETA': [],
               'test_data': [], 'true_tot': [], 'mean MEIRL_det_tot': [],
               'sd MEIRL_det_tot': [], 'mean MEIRL_unif_tot': [],
-              'sd MEIRL_unif_tot': [], 'mean AR_AEVB_tot': [],
-              'sd AR_AEVB_tot': [], 'mean random_tot': [],
+              'sd MEIRL_unif_tot': [], 'mean MEIRL_AE_tot': [],
+              'sd MEIRL_AE_tot': [], 'mean random_tot': [],
               'sd random_tot': []}
     
     for fo in res_folds:
@@ -1087,8 +1088,10 @@ def summary():
             textfile = sorted(os.listdir(direc))[0]
             with open(direc + '/' + textfile) as f:
                 for line in f:
-                    if '=' in line:
+                    if '=' in line:                            
                         key = line[0:(line.find('=')-1)]
+                        if key in ['mean AR_AEVB_tot', 'sd AR_AEVB_tot']:
+                            key = key.replace('AR_AEVB', 'MEIRL_AE')
                         if key in dfdict.keys():
                             val = line[(line.find('=')+2):(len(line)-1)]
                             if key == 'ex_sigsqs':
@@ -1102,7 +1105,7 @@ def summary():
                                     dfdict[key].append(float(val))
                                 
     df = pd.DataFrame.from_dict(dfdict)
-    return df
+    return df.drop_duplicates()
 
 
 def average_within_seed(df, filt_dict=False, filter_eta=False,
@@ -1117,7 +1120,7 @@ def average_within_seed(df, filt_dict=False, filter_eta=False,
         data = data[data['ex_sigsqs'] != 5] 
     seedmeans = (data.groupby('SEED_NUM')).mean()
     performance =['true_tot', 'mean MEIRL_det_tot', 'mean MEIRL_unif_tot',
-                  'mean AR_AEVB_tot', 'mean random_tot']
+                  'mean MEIRL_AE_tot', 'mean random_tot']
     colors = ['b', 'r', 'g', 'k', 'm']
     for i in range(len(performance)):
         snum = seedmeans.index - (2 - i)
@@ -1125,8 +1128,29 @@ def average_within_seed(df, filt_dict=False, filter_eta=False,
     dots = [mpatches.Patch(color=colors[i],
       label=performance[i]) for i in range(len(performance))]
     plt.legend(handles=dots, prop={'size': 9}, loc='lower left')
+    plt.xlabel('Random Seed')
+    plt.ylabel('Mean Cumulative Reward')
     plt.show()
     
+
+def average_within_algo(df, filt_dict=False, filter_eta=False,
+                        filter_sig=False):
+    data = df
+    if filt_dict:
+        for key, val in filt_dict.items():
+            data = data[data[key] == val]
+    if filter_eta:
+        data = data[data['ETA_COEF'] != 0.5]
+    if filter_sig:
+        data = data[data['ex_sigsqs'] != 5] 
+    performance =['true_tot', 'mean MEIRL_det_tot', 'mean MEIRL_unif_tot',
+                  'mean MEIRL_AE_tot', 'mean random_tot']
+    colors = ['b', 'r', 'g', 'k', 'm']
+    y = [np.mean(data[performance[i]]) for i in range(len(performance))]
+    plt.bar(performance, y, color=colors)#, width=1.2)
+    plt.xticks(rotation=45)
+    plt.show()
+
     
 def varying_hyp(df, hyp, algo, filt_dict=False):
     data = df
@@ -1149,6 +1173,70 @@ def varying_hyp(df, hyp, algo, filt_dict=False):
     plt.show()
 
 
+def compare_plots(df, filt_dict_1, filt_dict_2, filt_text_1, filt_text_2):
+    data_1 = df
+    data_2 = df
+    if filt_dict_1:
+        for key, val in filt_dict_1.items():
+            data_1 = data_1[data_1[key] == val]
+    if filt_dict_2:
+        for key, val in filt_dict_2.items():
+            data_2 = data_2[data_2[key] == val]
+    seedmeans_1 = (data_1.groupby('SEED_NUM')).mean()
+    seedmeans_2 = (data_2.groupby('SEED_NUM')).mean()
+    performance =['true_tot', 'mean MEIRL_det_tot', 'mean MEIRL_unif_tot',
+                  'mean MEIRL_AE_tot', 'mean random_tot']
+    colors = ['b', 'r', 'g', 'k', 'm']
+    for i in range(len(performance)):
+        snum_1 = seedmeans_1.index - (2 - i)
+        snum_2 = seedmeans_2.index + 5 - (2 - i)
+        plt.scatter(snum_1, seedmeans_1[performance[i]], c=colors[i])
+        plt.scatter(snum_2, seedmeans_2[performance[i]], marker='x', c=colors[i])
+    dots = [mpatches.Patch(color=colors[i],
+      label=performance[i]) for i in range(len(performance))]
+    legend1 = plt.legend(handles=dots, prop={'size': 9}, loc='lower left')
+    # fix...
+    plt.legend(handles=[Line2D([0], [0], marker='o', color='w',
+      markeredgecolor = 'k', markerfacecolor='k', label=filt_text_1),
+      Line2D([0], [0], marker='x', color='w', markeredgecolor = 'k',
+      markerfacecolor='k', label=filt_text_2)], loc='upper right')
+    plt.gca().add_artist(legend1)
+    plt.xlabel('Random Seed')
+    plt.ylabel('Mean Cumulative Reward')
+    plt.show()
+
+
+def generate_figures(df):
+
+    # myo vs boltz
+    compare_plots(df, {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1,
+      'test_data': 'myo', 'INTERCEPT_ETA': 0, 'N': 100},
+      {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1,
+      'test_data': 'boltz', 'INTERCEPT_ETA': 0, 'N': 100},
+      'Next Step', 'Q*')
+
+    # pos vs possibly-neg beta
+    compare_plots(df, {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1,
+      'test_data': 'myo', 'INTERCEPT_ETA': 0, 'N': 100},
+      {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1,
+      'test_data': 'myo', 'INTERCEPT_ETA': -1, 'N': 100},
+      'Positive Beta', 'Real Beta')
+
+    # large expertise coverage vs barely any
+    compare_plots(df, {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1,
+      'test_data': 'myo', 'INTERCEPT_ETA': 0, 'N': 100},
+      {'ETA_COEF': 0.5, 'ex_sigsqs': 0.1,
+      'test_data': 'myo', 'INTERCEPT_ETA': 0, 'N': 100},
+      'High Expert Coverage', 'Low Expert Coverage')
+      
+    # overall performance for all hyperparam variations
+    average_within_seed(df)
+
+    # overall performance for all seeds, 
+    average_within_algo(df, average_within_algo(df, {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'myo',
+                    'ex_sigsqs': 0.1, 'INTERCEPT_ETA': 0}))
+
+
 #%%
 
 # see_trajectory(rewards, np.array(traj_data[0])[0,0]
@@ -1166,6 +1254,10 @@ standard_filt_sig = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'myo',
                     'INTERCEPT_ETA': 0}
 boltz_filt_sig = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'boltz',
                     'INTERCEPT_ETA': 0}
+standard_filt_inter = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'myo',
+                    'ex_sigsqs': 0.1}
+boltz_filt_inter = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'boltz',
+                    'ex_sigsqs': 0.1}
 
 
 
