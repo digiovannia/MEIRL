@@ -49,19 +49,10 @@ def log_mean_exp(tensor):
     return np.log(np.mean(expo,axis=2)) + K
 
 
-def softmax(v, beta, axis=False):
-    '''
-    May delete if clause? no need for axis...
-    '''
-    if axis:
-        x = beta[:,:,None]*v
-        w = np.exp(x - np.max(x, axis=axis)[:,:,None])
-        z = np.sum(w, axis=axis)
-        return np.divide(w, z[:,:,None])
-    else:
-        w = np.exp(beta*v)
-        z = np.sum(w)
-        return w / z
+def softmax(v, beta):
+    w = np.exp(beta*v)
+    z = np.sum(w)
+    return w / z
     
     
 ########################### Grid world functions #############################
@@ -316,11 +307,11 @@ def compare_myo_opt(rewards, TP, Q, save=False, hyp=False):
     else:
         res_str = 'results/'
     if save:
-        plt.savefig(res_str + save + '/' + 'best_myo.png')
+        plt.savefig(res_str + save + '/' + 'best_myo.png', bbox_inches='tight')
     plt.show()
     sns.heatmap(np.argmax(Q, axis=2))
     if save:
-        plt.savefig(res_str + save + '/' + 'best_Q.png')
+        plt.savefig(res_str + save + '/' + 'best_Q.png', bbox_inches='tight')
     plt.show()
     
     
@@ -908,7 +899,7 @@ def evaluate_all(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             time = str(round(sec / 60, 3))
             print(percent + '% done: ' + time)
     if save:
-        plt.savefig(save[0] + '___' + save[1] + '.png')
+        plt.savefig(save[0] + '___' + save[1] + '.png', bbox_inches='tight')
         plt.show()
     return (true_total, totals[0], totals[1], totals[2], totals[3],
       np.std(totals[0]), np.std(totals[1]), np.std(totals[2]),
@@ -986,7 +977,8 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         rewards = lin_rew_func(pdict['theta_true'], state_space,
           pdict['centers_x'], pdict['centers_y'])
         sns.heatmap(rewards)
-        plt.savefig('hyp_results/' + fname + '/' + 'true_reward.png')
+        plt.savefig('hyp_results/' + fname + '/' + 'true_reward.png',
+          bbox_inches='tight')
         plt.show()
         
         opt_policy, Q = value_iter(state_space, action_space, rewards, TP,
@@ -1108,51 +1100,53 @@ def summary():
     return df.drop_duplicates()
 
 
-def average_within_seed(df, filt_dict=False, filter_eta=False,
-                        filter_sig=False):
+def average_within_seed(df, filt_dict=False, save=False):
     data = df
     if filt_dict:
         for key, val in filt_dict.items():
             data = data[data[key] == val]
-    if filter_eta:
-        data = data[data['ETA_COEF'] != 0.5]
-    if filter_sig:
-        data = data[data['ex_sigsqs'] != 5] 
     seedmeans = (data.groupby('SEED_NUM')).mean()
     performance =['true_tot', 'mean MEIRL_det_tot', 'mean MEIRL_unif_tot',
                   'mean MEIRL_AE_tot', 'mean random_tot']
+    names = ['True', 'MEIRL-Det', 'MEIRL-Unif', 'MEIRL-AE', 'Random']
     colors = ['b', 'r', 'g', 'k', 'm']
     for i in range(len(performance)):
         snum = seedmeans.index - (2 - i)
         plt.scatter(snum, seedmeans[performance[i]], c=colors[i])
     dots = [mpatches.Patch(color=colors[i],
-      label=performance[i]) for i in range(len(performance))]
+      label=names[i]) for i in range(len(performance))]
     plt.legend(handles=dots, prop={'size': 9}, loc='lower left')
     plt.xlabel('Random Seed')
     plt.ylabel('Mean Cumulative Reward')
+    if save:
+        plt.savefig('figures/' + save, bbox_inches='tight')
     plt.show()
     
 
-def average_within_algo(df, filt_dict=False, filter_eta=False,
-                        filter_sig=False):
+def average_within_algo(df, filt_dict=False, save=False):
     data = df
     if filt_dict:
         for key, val in filt_dict.items():
             data = data[data[key] == val]
-    if filter_eta:
-        data = data[data['ETA_COEF'] != 0.5]
-    if filter_sig:
-        data = data[data['ex_sigsqs'] != 5] 
     performance =['true_tot', 'mean MEIRL_det_tot', 'mean MEIRL_unif_tot',
                   'mean MEIRL_AE_tot', 'mean random_tot']
+    names = ['True', 'MEIRL-Det', 'MEIRL-Unif', 'MEIRL-AE', 'Random']
     colors = ['b', 'r', 'g', 'k', 'm']
+    x = np.arange(5)*0.5
     y = [np.mean(data[performance[i]]) for i in range(len(performance))]
-    plt.bar(performance, y, color=colors)#, width=1.2)
-    plt.xticks(rotation=45)
+    fig, ax = plt.subplots()
+    plt.bar(x, y, color=colors, width=0.5)#, width=1.2)
+    
+    ax.set_xticks(x)
+    ax.set_xticklabels(names, {'fontsize': 12})
+    #plt.xticks(rotation=45)
+    plt.tight_layout()
+    if save:
+        plt.savefig('figures/' + save, bbox_inches='tight')
     plt.show()
 
     
-def varying_hyp(df, hyp, algo, filt_dict=False):
+def varying_hyp(df, hyp, algo, filt_dict=False, save=False):
     data = df
     if filt_dict:
         for key, val in filt_dict.items():
@@ -1170,10 +1164,13 @@ def varying_hyp(df, hyp, algo, filt_dict=False):
     dots = [mpatches.Patch(color=colors[i],
       label=v) for i, v in enumerate(values)]
     plt.legend(handles=dots, prop={'size': 9}, loc='lower left')
+    if save:
+        plt.savefig('figures/' + save, bbox_inches='tight')
     plt.show()
 
 
-def compare_plots(df, filt_dict_1, filt_dict_2, filt_text_1, filt_text_2):
+def compare_plots(df, filt_dict_1, filt_dict_2, filt_text_1, filt_text_2,
+                  save=False):
     data_1 = df
     data_2 = df
     if filt_dict_1:
@@ -1186,6 +1183,7 @@ def compare_plots(df, filt_dict_1, filt_dict_2, filt_text_1, filt_text_2):
     seedmeans_2 = (data_2.groupby('SEED_NUM')).mean()
     performance =['true_tot', 'mean MEIRL_det_tot', 'mean MEIRL_unif_tot',
                   'mean MEIRL_AE_tot', 'mean random_tot']
+    names = ['True', 'MEIRL-Det', 'MEIRL-Unif', 'MEIRL-AE', 'Random']
     colors = ['b', 'r', 'g', 'k', 'm']
     for i in range(len(performance)):
         snum_1 = seedmeans_1.index - (2 - i)
@@ -1193,7 +1191,7 @@ def compare_plots(df, filt_dict_1, filt_dict_2, filt_text_1, filt_text_2):
         plt.scatter(snum_1, seedmeans_1[performance[i]], c=colors[i])
         plt.scatter(snum_2, seedmeans_2[performance[i]], marker='x', c=colors[i])
     dots = [mpatches.Patch(color=colors[i],
-      label=performance[i]) for i in range(len(performance))]
+      label=names[i]) for i in range(len(performance))]
     legend1 = plt.legend(handles=dots, prop={'size': 9}, loc='lower left')
     # fix...
     plt.legend(handles=[Line2D([0], [0], marker='o', color='w',
@@ -1203,38 +1201,79 @@ def compare_plots(df, filt_dict_1, filt_dict_2, filt_text_1, filt_text_2):
     plt.gca().add_artist(legend1)
     plt.xlabel('Random Seed')
     plt.ylabel('Mean Cumulative Reward')
+    if save:
+        plt.savefig('figures/' + save, bbox_inches='tight')
     plt.show()
 
 
 def generate_figures(df):
+
+    if not os.path.isdir('figures/'):
+        os.mkdir('figures/')
 
     # myo vs boltz
     compare_plots(df, {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1,
       'test_data': 'myo', 'INTERCEPT_ETA': 0, 'N': 100},
       {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1,
       'test_data': 'boltz', 'INTERCEPT_ETA': 0, 'N': 100},
-      'Next Step', 'Q*')
+      'Myopic', 'Boltzmann', save='Fig4a.png')
 
     # pos vs possibly-neg beta
     compare_plots(df, {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1,
       'test_data': 'myo', 'INTERCEPT_ETA': 0, 'N': 100},
       {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1,
       'test_data': 'myo', 'INTERCEPT_ETA': -1, 'N': 100},
-      'Positive Beta', 'Real Beta')
+      'Positive Beta', 'Real Beta', save='Fig4b.png')
 
     # large expertise coverage vs barely any
     compare_plots(df, {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1,
       'test_data': 'myo', 'INTERCEPT_ETA': 0, 'N': 100},
       {'ETA_COEF': 0.5, 'ex_sigsqs': 0.1,
       'test_data': 'myo', 'INTERCEPT_ETA': 0, 'N': 100},
-      'High Expert Coverage', 'Low Expert Coverage')
+      'High Expert Coverage', 'Low Expert Coverage',
+      save='Fig4c.png')
+
+    # low noise vs high noise
+    compare_plots(df, {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1,
+      'test_data': 'myo', 'INTERCEPT_ETA': 0, 'N': 100},
+      {'ETA_COEF': 0.01, 'ex_sigsqs': 5,
+      'test_data': 'myo', 'INTERCEPT_ETA': 0, 'N': 100},
+      'Low Beta Noise', 'High Beta Noise',
+      save='Fig4d.png')
       
     # overall performance for all hyperparam variations
-    average_within_seed(df)
+    average_within_seed(df, save='Fig4e.png')
 
-    # overall performance for all seeds, 
-    average_within_algo(df, average_within_algo(df, {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'myo',
-                    'ex_sigsqs': 0.1, 'INTERCEPT_ETA': 0}))
+    # overall performance across seeds, for all hyperparams
+    average_within_algo(df, save='Fig3a.png')
+
+    # overall performance for defaults on myo
+    average_within_algo(df, {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'myo',
+                    'ex_sigsqs': 0.1, 'INTERCEPT_ETA': 0}, save='Fig3b.png')
+
+    # overall performance for defaults on boltz
+    average_within_algo(df, {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'boltz',
+                    'ex_sigsqs': 0.1, 'INTERCEPT_ETA': 0}, save='Fig3c.png')
+
+    hyparams = HYPARAMS
+    global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, COEF
+    global ETA_COEF, GAM, M, N, J, T, Ti, B, INTERCEPT_REW, TP
+    (D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, COEF, ETA_COEF, GAM, M, N, J,
+          T, Ti, B, INTERCEPT_REW, learn_rate, cr_reps, reps,
+          sigsq_list) = (hyparams['D'], hyparams['MOVE_NOISE'],
+          hyparams['INTERCEPT_ETA'], hyparams['WEIGHT'], hyparams['COEF'],
+          hyparams['ETA_COEF'], hyparams['GAM'], hyparams['M'],
+          hyparams['N'], hyparams['J'], hyparams['T'], hyparams['Ti'],
+          hyparams['B'], hyparams['INTERCEPT_REW'], hyparams['learn_rate'],
+          hyparams['cr_reps'], hyparams['reps'], hyparams['sigsq_list'])
+    alpha = np.array([2, 0, 0, 0, 1])
+    sns.heatmap(mu_all(alpha))
+    plt.savefig('figures/Fig2a.png', bbox_inches='tight')
+    plt.show()
+    ETA_COEF = 0.5
+    sns.heatmap(mu_all(alpha))
+    plt.savefig('figures/Fig2b.png', bbox_inches='tight')
+    plt.show()
 
 
 #%%
@@ -1345,3 +1384,48 @@ RESULTS FROM results_var_hyper:
 79)[seed 160, boltz] INTERCEPT_ETA = -1
 80)[seed 160, boltz] INTERCEPT_ETA = -1
 '''
+
+def get_ER(hyparams=HYPARAMS):
+    '''
+    '''
+    Qs = []
+    for seed in [20*(i+1) for i in range(10)]:
+        SEED_NUM = seed
+        np.random.seed(SEED_NUM)
+        global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, COEF
+        global ETA_COEF, GAM, M, N, J, T, Ti, B, INTERCEPT_REW, TP
+        (D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, COEF, ETA_COEF, GAM, M, N, J,
+          T, Ti, B, INTERCEPT_REW, learn_rate, cr_reps, reps,
+          sigsq_list) = (hyparams['D'], hyparams['MOVE_NOISE'],
+          hyparams['INTERCEPT_ETA'], hyparams['WEIGHT'], hyparams['COEF'],
+          hyparams['ETA_COEF'], hyparams['GAM'], hyparams['M'],
+          hyparams['N'], hyparams['J'], hyparams['T'], hyparams['Ti'],
+          hyparams['B'], hyparams['INTERCEPT_REW'], hyparams['learn_rate'],
+          hyparams['cr_reps'], hyparams['reps'], hyparams['sigsq_list'])
+
+        d = D // 2 + 1
+        state_space = np.array([(i,j) for i in range(D) for j in range(D)])
+        action_space = list(range(4))
+        TP = transition(state_space, action_space)
+        
+        pdict = {}
+
+        alpha1 = np.array([WEIGHT, 0, 0, 0, 1])
+        alpha2 = np.array([0, 0, WEIGHT, 0, 1])
+        alpha3 = np.array([0, 0, 0, WEIGHT, 1]) 
+        alpha4 = np.array([0, WEIGHT, 0, 0, 1])
+        
+        p = alpha1.shape[0]
+        m = 4
+        
+        init_Q = np.random.rand(D, D, 4)
+        
+        pdict['centers_x'] = np.random.choice(D, D//2)
+        pdict['centers_y'] = np.random.choice(D, D//2)
+        
+        pdict['theta_true'] = 3*np.random.rand(D//2 + 1) - 2 
+        rewards = lin_rew_func(pdict['theta_true'], state_space,
+          pdict['centers_x'], pdict['centers_y'])
+
+        Qs.append(expect_reward_all(rewards, TP))
+    return Qs        
