@@ -845,6 +845,12 @@ def evaluate_all(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                  action_space, B, m, M, Ti, N, learn_rate, reps, policy, T,
                  rewards, init_Q, J, centers_x, centers_y, cr_reps, save=False,
                  verbose=False):
+    '''
+    With a random list of start states, computes J estimates of theta from 
+    each algorithm, trains an optimal policy with respect to these estimates,
+    and records the reward obtained from episodes following these policies on
+    the start states (as well as reward from a policy trained on true theta).
+    '''
     start = datetime.datetime.now()
     s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
     true_rew = cumulative_reward(s_list, cr_reps, policy, T, state_space,
@@ -854,19 +860,11 @@ def evaluate_all(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     totals = [[],[], [], []]
     cols = ['r', 'g', 'k', 'm']
     for j in range(J):
-        ta = MEIRL_det(theta, alpha, sigsq, phi, beta, traj_data, TP,
-          state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
-          centers_x, centers_y)[0]
-        tb = MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP,
-          state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
-          centers_x, centers_y)[0]
-        tc = MEIRL_AE(theta, alpha, sigsq, phi, beta, traj_data, TP,
-          state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
-          centers_x, centers_y)[0]
-        td = random_algo(theta, alpha, sigsq, phi, beta, traj_data, TP,
-          state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
-          centers_x, centers_y)[0]
-        theta_stars = [ta, tb, tc, td]
+        theta_stars = []
+        for algo in [MEIRL_det, MEIRL_unif, MEIRL_AE, random_algo]:
+            theta_stars.append(algo(theta, alpha, sigsq, phi, beta, traj_data,
+              TP, state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
+              centers_x, centers_y)[0])
         for i in range(4):
             reward_est = lin_rew_func(theta_stars[i], state_space, centers_x,
               centers_y)
@@ -1040,11 +1038,8 @@ def dict_match(nums):
 
 def summary():
     '''
-    Using results from results_var_hyper, generates summary data and plots for:
-    1) X = sigsq, Y = averages over all MDPs [myo and boltz]
-    2) X = ETA, Y = ditto
-    3) For each MDP: averages over hyperparams
-    4
+    Using results from results_var_hyper, generates summary data for all
+    simulations in a pandas data frame
     '''
     res_folds = [fo for fo in os.listdir('hyp_results') if re.match('.*\$', fo)]
 
@@ -1083,30 +1078,11 @@ def summary():
     return df.drop_duplicates()
 
 
-def average_within_seed(df, filt_dict=False, save=False):
-    data = df
-    if filt_dict:
-        for key, val in filt_dict.items():
-            data = data[data[key] == val]
-    seedmeans = (data.groupby('SEED_NUM')).mean()
-    performance =['true_tot', 'mean MEIRL_det_tot', 'mean MEIRL_unif_tot',
-                  'mean MEIRL_AE_tot', 'mean random_tot']
-    names = ['True', 'MEIRL-Det', 'MEIRL-Unif', 'MEIRL-AE', 'Random']
-    colors = ['b', 'r', 'g', 'k', 'm']
-    for i in range(len(performance)):
-        snum = seedmeans.index - (2 - i)
-        plt.scatter(snum, seedmeans[performance[i]], c=colors[i])
-    dots = [mpatches.Patch(color=colors[i],
-      label=names[i]) for i in range(len(performance))]
-    plt.legend(handles=dots, prop={'size': 9}, loc='lower left')
-    plt.xlabel('Random Seed')
-    plt.ylabel('Mean Cumulative Reward')
-    if save:
-        plt.savefig('figures/' + save, bbox_inches='tight')
-    plt.show()
-
-
 def average_within_algo(df, filt_dict=False, save=False):
+    '''
+    Plots mean reward for each algo, after applying filters for hyperparams
+    based on filt_dict
+    '''
     data = df
     if filt_dict:
         for key, val in filt_dict.items():
@@ -1131,6 +1107,11 @@ def average_within_algo(df, filt_dict=False, save=False):
 
 def compare_plots(df, filt_dict_1, filt_dict_2, filt_text_1, filt_text_2,
                   save=False):
+    '''
+    Plots mean reward for each algo on each seed, for datasets based
+    on two filters for comparison of results from different
+    hyperparameters.
+    '''
     data_1 = df
     data_2 = df
     if filt_dict_1:
@@ -1163,7 +1144,8 @@ def compare_plots(df, filt_dict_1, filt_dict_2, filt_text_1, filt_text_2,
         err_1 = pooled_sd_1[err_str] / np.sqrt(HYPARAMS['J'])
         err_2 = pooled_sd_2[err_str] / np.sqrt(HYPARAMS['J'])
         plt.scatter(snum_1, seedmeans_1[performance[i]], c=colors[i])
-        plt.scatter(snum_2, seedmeans_2[performance[i]], marker='x', c=colors[i])
+        plt.scatter(snum_2, seedmeans_2[performance[i]], marker='x',
+          c=colors[i])
         plt.errorbar(snum_1, seedmeans_1[performance[i]],
           yerr=2*err_1, fmt='none', c=colors[i])
         plt.errorbar(snum_2, seedmeans_2[performance[i]],
@@ -1184,7 +1166,6 @@ def compare_plots(df, filt_dict_1, filt_dict_2, filt_text_1, filt_text_2,
 
 
 def generate_figures(df):
-
     if not os.path.isdir('figures/'):
         os.mkdir('figures/')
 
@@ -1307,154 +1288,52 @@ def varying_hyp(df, hyp, algo, filt_dict=False, save=False):
     plt.show()
 
 
+def average_within_seed(df, filt_dict=False, save=False):
+    data = df
+    if filt_dict:
+        for key, val in filt_dict.items():
+            data = data[data[key] == val]
+    seedmeans = (data.groupby('SEED_NUM')).mean()
+    performance =['true_tot', 'mean MEIRL_det_tot', 'mean MEIRL_unif_tot',
+                  'mean MEIRL_AE_tot', 'mean random_tot']
+    names = ['True', 'MEIRL-Det', 'MEIRL-Unif', 'MEIRL-AE', 'Random']
+    colors = ['b', 'r', 'g', 'k', 'm']
+    for i in range(len(performance)):
+        snum = seedmeans.index - (2 - i)
+        plt.scatter(snum, seedmeans[performance[i]], c=colors[i])
+    dots = [mpatches.Patch(color=colors[i],
+      label=names[i]) for i in range(len(performance))]
+    plt.legend(handles=dots, prop={'size': 9}, loc='lower left')
+    plt.xlabel('Random Seed')
+    plt.ylabel('Mean Cumulative Reward')
+    if save:
+        plt.savefig('figures/' + save, bbox_inches='tight')
+    plt.show()
+
+
+
 #%%
     
+'''
+To create results files, I did the equivalent of the following loop. Although
+each algorithm computes a solution in a few seconds, evaluating all algorithms
+on all the hyperparameter combinations of interest takes several hours and is
+best executed in parallel across multiple machines/instances. The limiting
+step for these evaluations is the forward RL step, that is, computing the
+optimal policy for each estimate of theta.
+
+params_dict = {'sigsq_list': [[0.01]*4, [0.1]*4, [1]*4, [5]*4],
+               'ETA_COEF': [0.01, 0.05, 0.5],
+               'N': [20, 50, 100],
+               'INTERCEPT_ETA': [-1]}
+id_num = 1
+for i in range(10):
+    seed = 20*(i+1)
+    for parameter, value_list in params_dict.items():
+        for td in ['myo', 'boltz']:
+            results_var_hyper(id_num, parameter, value_list, seed, td)
+            id_num += 1
+'''
+
 df = summary()
-standard_filt_N = {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1, 'test_data': 'myo',
-                    'INTERCEPT_ETA': 0}
-boltz_filt_N = {'ETA_COEF': 0.01, 'ex_sigsqs': 0.1, 'test_data': 'boltz',
-                    'INTERCEPT_ETA': 0}
-standard_filt_ETA = {'N': 100, 'ex_sigsqs': 0.1, 'test_data': 'myo',
-                    'INTERCEPT_ETA': 0}
-boltz_filt_ETA = {'N': 100, 'ex_sigsqs': 0.1, 'test_data': 'boltz',
-                    'INTERCEPT_ETA': 0}
-standard_filt_sig = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'myo',
-                    'INTERCEPT_ETA': 0}
-boltz_filt_sig = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'boltz',
-                    'INTERCEPT_ETA': 0}
-standard_filt_inter = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'myo',
-                    'ex_sigsqs': 0.1}
-boltz_filt_inter = {'ETA_COEF': 0.01, 'N': 100, 'test_data': 'boltz',
-                    'ex_sigsqs': 0.1}
-
-
-
-
-'''
-RESULTS FROM results_var_hyper:
-1) [seed 20] sigsq varying from 0.01, 0.1, 1, 5 --- good candidate for boltz comparison
-2) [seed 60] sigsq varying from 0.01, 0.1, 1, 5
-3) [seed 100] sigsq varying from 0.01, 0.1, 1, 5 --- good candidate for boltz comparison
-4) [seed 140] sigsq varying from 0.01, 0.1, 1, 5
-5) [seed 180] sigsq varying from 0.01, 0.1, 1, 5
-6) [seed 20, boltz] sigsq varying from 0.01, 0.1, 1, 5
-7) [seed 60, boltz] sigsq varying from 0.01, 0.1, 1, 5
-8) [seed 100, boltz] sigsq varying from 0.01, 0.1, 1, 5
-9) [seed 140, boltz] sigsq varying from 0.01, 0.1, 1, 5
-10) [seed 180, boltz] sigsq varying from 0.01, 0.1, 1, 5
-11) [seed 20] ETA_COEF varying from 0.01, 0.05, 0.5
-12) [seed 60] ETA_COEF varying from 0.01, 0.05, 0.5
-13) [seed 100] ETA_COEF varying from 0.01, 0.05, 0.5
-14) [seed 140] ETA_COEF varying from 0.01, 0.05, 0.5
-15) [seed 180] ETA_COEF varying from 0.01, 0.05, 0.5
-16) [seed 20, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
-17) [seed 60, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
-18) [seed 100, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
-19) [seed 140, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
-20) [seed 180, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
-21) [seed 40] sigsq varying from 0.01, 0.1, 1, 5 -- boltz comparison?
-22) [seed 80] sigsq varying from 0.01, 0.1, 1, 5
-23) [seed 120] sigsq varying from 0.01, 0.1, 1, 5
-24) [seed 160] sigsq varying from 0.01, 0.1, 1, 5
-25) [seed 200] sigsq varying from 0.01, 0.1, 1, 5
-26) [seed 40, boltz] sigsq varying from 0.01, 0.1, 1, 5
-27) [seed 80, boltz] sigsq varying from 0.01, 0.1, 1, 5
-28) [seed 120, boltz] sigsq varying from 0.01, 0.1, 1, 5
-29) [seed 160, boltz] sigsq varying from 0.01, 0.1, 1, 5
-30) [seed 200, boltz] sigsq varying from 0.01, 0.1, 1, 5
-31) [seed 40] ETA_COEF varying from 0.01, 0.05, 0.5
-32) [seed 80] ETA_COEF varying from 0.01, 0.05, 0.5
-33) [seed 120] ETA_COEF varying from 0.01, 0.05, 0.5
-34) [seed 160] ETA_COEF varying from 0.01, 0.05, 0.5
-35) [seed 200] ETA_COEF varying from 0.01, 0.05, 0.5
-36) [seed 40, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
-37) [seed 80, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
-38) [seed 120, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
-39) [seed 160, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
-40) [seed 200, boltz] ETA_COEF varying from 0.01, 0.05, 0.5
-41) [seed 20] N varying from 20, 50, 100
-42) [seed 60] N var from 20, 50, 100
-43) [seed 100] N var from 20, 50, 100
-44) [seed 140] N var from 20, 50, 100
-45) [seed 180] N var from 20, 50, 100 
-46) [seed 20, boltz] N varying from 20, 50, 100
-47) [seed 60, boltz] N varying from 20, 50, 100
-48) [seed 100, boltz] N varying from 20, 50, 100
-49) [seed 140, boltz] N varying from 20, 50, 100
-50)[seed 180, boltz] N varying from 20, 50, 100
-51)[seed 40] N varying from 20, 50, 100
-52)[seed 80] N varying from 20, 50, 100
-53)[seed 120] N varying from 20, 50, 100                 
-54)[seed 160] N varying from 20, 50, 100
-55)[seed 200] N varying from 20, 50, 100
-56)[seed 40, boltz] N varying from 20, 50, 100
-57)[seed 80, boltz] N varying from 20, 50, 100
-58)[seed 120, boltz] N varying from 20, 50, 100
-59)[seed 160, boltz] N varying from 20, 50, 100
-60)[seed 200, boltz] N varying from 20, 50, 100
-61)[seed 20] INTERCEPT_ETA = -1
-62)[seed 60] INTERCEPT_ETA = -1
-63)[seed 100] INTERCEPT_ETA = -1  
-64)[seed 140] INTERCEPT_ETA = -1
-65)[seed 180] INTERCEPT_ETA = -1
-66)[seed 40] INTERCEPT_ETA = -1   
-67)[seed 80] INTERCEPT_ETA = -1   
-68)[seed 120] INTERCEPT_ETA = -1 
-69)[seed 160] INTERCEPT_ETA = -1
-70)[seed 200] INTERCEPT_ETA = -1   
-71)[seed 20, boltz] INTERCEPT_ETA = -1
-72)[seed 60, boltz] INTERCEPT_ETA = -1
-73)[seed 100, boltz] INTERCEPT_ETA = -1
-74)[seed 140, boltz] INTERCEPT_ETA = -1
-75)[seed 180, boltz] INTERCEPT_ETA = -1
-76)[seed 40, boltz] INTERCEPT_ETA = -1
-77)[seed 80, boltz] INTERCEPT_ETA = -1
-78)[seed 120, boltz] INTERCEPT_ETA = -1
-79)[seed 160, boltz] INTERCEPT_ETA = -1
-80)[seed 160, boltz] INTERCEPT_ETA = -1
-'''
-
-def get_ER(hyparams=HYPARAMS):
-    '''
-    '''
-    Qs = []
-    for seed in [20*(i+1) for i in range(10)]:
-        SEED_NUM = seed
-        np.random.seed(SEED_NUM)
-        global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, COEF
-        global ETA_COEF, GAM, M, N, J, T, Ti, B, INTERCEPT_REW, TP
-        (D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, COEF, ETA_COEF, GAM, M, N, J,
-          T, Ti, B, INTERCEPT_REW, learn_rate, cr_reps, reps,
-          sigsq_list) = (hyparams['D'], hyparams['MOVE_NOISE'],
-          hyparams['INTERCEPT_ETA'], hyparams['WEIGHT'], hyparams['COEF'],
-          hyparams['ETA_COEF'], hyparams['GAM'], hyparams['M'],
-          hyparams['N'], hyparams['J'], hyparams['T'], hyparams['Ti'],
-          hyparams['B'], hyparams['INTERCEPT_REW'], hyparams['learn_rate'],
-          hyparams['cr_reps'], hyparams['reps'], hyparams['sigsq_list'])
-
-        d = D // 2 + 1
-        state_space = np.array([(i,j) for i in range(D) for j in range(D)])
-        action_space = list(range(4))
-        TP = transition(state_space, action_space)
-        
-        pdict = {}
-
-        alpha1 = np.array([WEIGHT, 0, 0, 0, 1])
-        alpha2 = np.array([0, 0, WEIGHT, 0, 1])
-        alpha3 = np.array([0, 0, 0, WEIGHT, 1]) 
-        alpha4 = np.array([0, WEIGHT, 0, 0, 1])
-        
-        p = alpha1.shape[0]
-        m = 4
-        
-        init_Q = np.random.rand(D, D, 4)
-        
-        pdict['centers_x'] = np.random.choice(D, D//2)
-        pdict['centers_y'] = np.random.choice(D, D//2)
-        
-        pdict['theta_true'] = 3*np.random.rand(D//2 + 1) - 2 
-        rewards = lin_rew_func(pdict['theta_true'], state_space,
-          pdict['centers_x'], pdict['centers_y'])
-
-        Qs.append(expect_reward_all(rewards, TP))
-    return Qs        
+generate_figures(df)
