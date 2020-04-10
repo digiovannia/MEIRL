@@ -1,3 +1,5 @@
+#%%
+
 import numpy as np 
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
@@ -393,7 +395,7 @@ def GD(phi, theta, alpha, sigsq, g_phi, g_theta, g_alpha, g_sigsq, learn_rate):
     return phi, theta, alpha, sigsq
 
 
-############################# Full AEVB models ###############################
+########################## MEIRL-Variational model #############################
 
 
 def grad_terms(normals, phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m):
@@ -432,7 +434,7 @@ Sum over an axis is over time steps in the trajectory, as well as over the
 4 experts in the case of theta_grad
 '''
 
-def phi_grad_ae(phi, m, Ti, normals, denom, sigsq, gZ_phi):
+def phi_grad_V(phi, m, Ti, normals, denom, sigsq, gZ_phi):
     x1 = (phi[:,0][:,None]*np.ones((m,Ti)))[:,None,:]
     x2 = (denom**(1/2))[:,None,None]*normals
     x = x1 + x2
@@ -442,12 +444,12 @@ def phi_grad_ae(phi, m, Ti, normals, denom, sigsq, gZ_phi):
     return np.swapaxes(np.mean(result, axis=2), 0, 1)
 
 
-def alpha_grad_ae(gZ_alpha, E_all, R_all):
+def alpha_grad_V(gZ_alpha, E_all, R_all):
     result = -gZ_alpha + np.einsum('ijk,ik->ij', E_all, R_all)[:,None,:]
     return np.mean(result, axis=1)
 
 
-def sigsq_grad_ae(gZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all, gvec):
+def sigsq_grad_V(gZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all, gvec):
     q_grad = -Ti/(2*denom)
     x = -Ti/(2*sigsq) + np.einsum('ij,ij->i', R_all, R_all)
     y = np.einsum('ijk,ik->ij', normals, R_all)/(2*denom**(1/2))[:,None]
@@ -458,7 +460,7 @@ def sigsq_grad_ae(gZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all, gvec):
     return np.mean(result, axis=1)
 
 
-def theta_grad_ae(gZ_theta, data, state_space, R_all, E_all, sigsq, alpha,
+def theta_grad_V(gZ_theta, data, state_space, R_all, E_all, sigsq, alpha,
                centers_x, centers_y):
     gradR = grad_lin_rew(data, state_space, centers_x, centers_y)
     X = sigsq[:,None]*R_all + np.einsum('ij,ijk->ik', alpha, E_all)
@@ -512,7 +514,7 @@ def logZ(sigsq, normals, meanvec, denom, impa, reward_est, data, M, TP, R_all,
     return logZvec, gZ_theta, gZ_alpha, gZ_sigsq, gZ_phi
 
 
-def MEIRL_AE(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
+def MEIRL_V(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
          plot=False):
     '''
@@ -564,11 +566,11 @@ def MEIRL_AE(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                 best_alpha = y_alpha.copy()
                 best_sigsq = y_sigsq.copy()
               
-            g_phi = phi_grad_ae(y_phi, m, Ti, normals, denom, y_sigsq, gZ_phi)
-            g_theta = theta_grad_ae(gZ_theta, data, state_space, R_all, E_all,
+            g_phi = phi_grad_V(y_phi, m, Ti, normals, denom, y_sigsq, gZ_phi)
+            g_theta = theta_grad_V(gZ_theta, data, state_space, R_all, E_all,
               y_sigsq, y_alpha, centers_x, centers_y)
-            g_alpha = alpha_grad_ae(gZ_alpha, E_all, R_all)
-            g_sigsq = sigsq_grad_ae(gZ_sigsq, normals, Ti, y_sigsq, gnorm,
+            g_alpha = alpha_grad_V(gZ_alpha, E_all, R_all)
+            g_sigsq = sigsq_grad_V(gZ_sigsq, normals, Ti, y_sigsq, gnorm,
               denom, R_all, gvec)
             
             # gradient clipping
@@ -861,7 +863,7 @@ def evaluate_all(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
     cols = ['r', 'g', 'k', 'm']
     for j in range(J):
         theta_stars = []
-        for algo in [MEIRL_det, MEIRL_unif, MEIRL_AE, random_algo]:
+        for algo in [MEIRL_det, MEIRL_unif, MEIRL_V, random_algo]:
             theta_stars.append(algo(theta, alpha, sigsq, phi, beta, traj_data,
               TP, state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
               centers_x, centers_y)[0])
@@ -904,7 +906,7 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
      * blue = policy trained on ground truth reward
      * red = MEIRL_det
      * green = MEIRL_unif
-     * black = MEIRL_AE
+     * black = MEIRL_V
      * magenta = random theta
     '''
     SEED_NUM = seed
@@ -1047,8 +1049,8 @@ def summary():
               'INTERCEPT_ETA': [],
               'test_data': [], 'true_tot': [], 'mean MEIRL_det_tot': [],
               'sd MEIRL_det_tot': [], 'mean MEIRL_unif_tot': [],
-              'sd MEIRL_unif_tot': [], 'mean MEIRL_AE_tot': [],
-              'sd MEIRL_AE_tot': [], 'mean random_tot': [],
+              'sd MEIRL_unif_tot': [], 'mean MEIRL_V_tot': [],
+              'sd MEIRL_V_tot': [], 'mean random_tot': [],
               'sd random_tot': []}
     
     for fo in res_folds:
@@ -1061,7 +1063,7 @@ def summary():
                     if '=' in line:                            
                         key = line[0:(line.find('=')-1)]
                         if key in ['mean AR_AEVB_tot', 'sd AR_AEVB_tot']:
-                            key = key.replace('AR_AEVB', 'MEIRL_AE')
+                            key = key.replace('AR_AEVB', 'MEIRL_V')
                         if key in dfdict.keys():
                             val = line[(line.find('=')+2):(len(line)-1)]
                             if key == 'ex_sigsqs':
@@ -1088,8 +1090,8 @@ def average_within_algo(df, filt_dict=False, save=False):
         for key, val in filt_dict.items():
             data = data[data[key] == val]
     performance =['true_tot', 'mean MEIRL_det_tot', 'mean MEIRL_unif_tot',
-                  'mean MEIRL_AE_tot', 'mean random_tot']
-    names = ['True', 'MEIRL-Det', 'MEIRL-Unif', 'MEIRL-AE', 'Random']
+                  'mean MEIRL_V_tot', 'mean random_tot']
+    names = ['True', 'MEIRL-Det', 'MEIRL-Unif', 'MEIRL-V', 'Random']
     colors = ['b', 'r', 'g', 'k', 'm']
     x = np.arange(5)*0.5
     y = [np.mean(data[performance[i]]) for i in range(len(performance))]
@@ -1122,19 +1124,19 @@ def compare_plots(df, filt_dict_1, filt_dict_2, filt_text_1, filt_text_2,
             data_2 = data_2[data_2[key] == val]
     mod_d1 = data_1.copy()
     mod_d2 = data_2.copy()
-    mod_d1[['sd MEIRL_det_tot', 'sd MEIRL_unif_tot', 'sd MEIRL_AE_tot',
+    mod_d1[['sd MEIRL_det_tot', 'sd MEIRL_unif_tot', 'sd MEIRL_V_tot',
       'sd random_tot']] = mod_d1[['sd MEIRL_det_tot', 'sd MEIRL_unif_tot',
-      'sd MEIRL_AE_tot', 'sd random_tot']]**2
-    mod_d2[['sd MEIRL_det_tot', 'sd MEIRL_unif_tot', 'sd MEIRL_AE_tot',
+      'sd MEIRL_V_tot', 'sd random_tot']]**2
+    mod_d2[['sd MEIRL_det_tot', 'sd MEIRL_unif_tot', 'sd MEIRL_V_tot',
       'sd random_tot']] = mod_d2[['sd MEIRL_det_tot', 'sd MEIRL_unif_tot',
-      'sd MEIRL_AE_tot', 'sd random_tot']]**2
+      'sd MEIRL_V_tot', 'sd random_tot']]**2
     seedmeans_1 = (data_1.groupby('SEED_NUM')).mean()
     seedmeans_2 = (data_2.groupby('SEED_NUM')).mean()
     pooled_sd_1 = np.sqrt((mod_d1.groupby('SEED_NUM')).sum())
     pooled_sd_2 = np.sqrt((mod_d2.groupby('SEED_NUM')).sum())
     performance =['true_tot', 'mean MEIRL_det_tot', 'mean MEIRL_unif_tot',
-                  'mean MEIRL_AE_tot', 'mean random_tot']
-    names = ['True', 'MEIRL-Det', 'MEIRL-Unif', 'MEIRL-AE', 'Random']
+                  'mean MEIRL_V_tot', 'mean random_tot']
+    names = ['True', 'MEIRL-Det', 'MEIRL-Unif', 'MEIRL-V', 'Random']
     colors = ['b', 'r', 'g', 'k', 'm'] 
     fig = plt.figure(figsize=(6.5, 4.5))
     for i in range(len(performance)):
@@ -1295,8 +1297,8 @@ def average_within_seed(df, filt_dict=False, save=False):
             data = data[data[key] == val]
     seedmeans = (data.groupby('SEED_NUM')).mean()
     performance =['true_tot', 'mean MEIRL_det_tot', 'mean MEIRL_unif_tot',
-                  'mean MEIRL_AE_tot', 'mean random_tot']
-    names = ['True', 'MEIRL-Det', 'MEIRL-Unif', 'MEIRL-AE', 'Random']
+                  'mean MEIRL_V_tot', 'mean random_tot']
+    names = ['True', 'MEIRL-Det', 'MEIRL-Unif', 'MEIRL-V', 'Random']
     colors = ['b', 'r', 'g', 'k', 'm']
     for i in range(len(performance)):
         snum = seedmeans.index - (2 - i)
@@ -1331,7 +1333,8 @@ for i in range(10):
     seed = 20*(i+1)
     for parameter, value_list in params_dict.items():
         for td in ['myo', 'boltz']:
-            results_var_hyper(id_num, parameter, value_list, seed, td)
+            results_var_hyper(id_num, parameter, value_list, seed, td,
+              verbose=True)
             id_num += 1
 '''
 
