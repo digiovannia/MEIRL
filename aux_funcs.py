@@ -59,15 +59,15 @@ def act_to_coord(a):
     return d[a]
 
 
-def state_index(tup):
+def state_index(tup, D):
     return D*tup[0] + tup[1]
 
 
-def multi_state_index(states):
+def multi_state_index(states, D):
     return D*states[:,0]+states[:,1]
 
 
-def transition(state_space, action_space):
+def transition(state_space, action_space, D, MOVE_NOISE):
     '''
     Creates transition dynamics tensor based on step rules of the grid world.
     '''
@@ -86,24 +86,24 @@ def transition(state_space, action_space):
                 for y2 in range(D):
                     if ((x2 == x1 + action[0]) and
                       (y2 == y1 + action[1])):
-                        TP[s,a,state_index((x2,y2))] += 1 - MOVE_NOISE
+                        TP[s,a,state_index((x2,y2),D)] += 1 - MOVE_NOISE
                     if manh_dist((x2, y2), state_space[s]) == 1:
-                        TP[s,a,state_index((x2,y2))] += MOVE_NOISE/4
+                        TP[s,a,state_index((x2,y2),D)] += MOVE_NOISE/4
                     if ((x2, y2) == state_space[s]).all():
                         count = (x2 == 0 or x2 == D-1) + (y2 == 0 or y2 == D-1)
-                        TP[s,a,state_index((x2,y2))] += count*MOVE_NOISE/4
+                        TP[s,a,state_index((x2,y2),D)] += count*MOVE_NOISE/4
                         if ((x1 + action[0] < 0) or
                           (x1 + action[0] >= D) or
                           (y1 + action[1] < 0) or
                           (y1 + action[1] >= D)):
-                            TP[s,a,state_index((x2,y2))] += 1 - MOVE_NOISE
+                            TP[s,a,state_index((x2,y2),D)] += 1 - MOVE_NOISE
     return TP
 
 
 ################# Functions for generating trajectories ######################
 
 
-def grid_step(s, a):
+def grid_step(s, a, MOVE_NOISE):
     '''
     Given current state s (in tuple form) and action a, returns resulting state.
     '''
@@ -114,7 +114,7 @@ def grid_step(s, a):
     return np.minimum(np.maximum(new_state, 0), D-1)
 
 
-def episode(s, T, policy, rewards, action_space, a=-1):
+def episode(s, T, policy, rewards, action_space, MOVE_NOISE, a=-1):
     '''
     Given any generic state, time horizon, policy, and reward structure indexed
     by the state, generates an episode starting from that state.
@@ -125,7 +125,7 @@ def episode(s, T, policy, rewards, action_space, a=-1):
     actions = [a]
     reward_list = [0]
     for _ in range(T-1):
-        s = grid_step(s,a)
+        s = grid_step(s,a,MOVE_NOISE)
         states.append(s)
         reward_list.append(rewards[tuple(s)])
         a = np.random.choice(action_space, p=policy[tuple(s)])
@@ -155,7 +155,7 @@ def value_iter(state_space, action_space, rewards, TP, gam, tol):
     return policy, Q.reshape(D, D, 4)
 
 
-def eta(st):
+def eta(st, ETA_COEF):
     '''
     Features for beta function
     '''
@@ -171,45 +171,45 @@ def myo_policy(beta, s, TP, rewards):
     Policy for myopic expert (action probability proportional to next-step
     expected reward)
     '''
-    expect_rew = TP[state_index(s)].dot(np.ravel(rewards))
+    expect_rew = TP[state_index(s,D)].dot(np.ravel(rewards))
     return softmax(expect_rew, beta)
 
 
 def synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
-                   TP, Q=False):
+                   TP, MOVE_NOISE, ETA_COEF, Q=False):
     '''
     Generates trajectory based on myopic policy by default, or by Q-value-based
     policy if a Q array is supplied.
     '''
     s = state_space[np.random.choice(len(state_space))]
     states = [s]
-    beta = np.dot(eta(s), alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
+    beta = np.dot(eta(s, ETA_COEF), alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
     if type(Q) == np.ndarray:
         a = np.random.choice(action_space, p = softmax(Q[s[0],s[1]], beta))
     else:
         a = np.random.choice(action_space, p = myo_policy(beta, s, TP, rewards))
     actions = [a]
     for _ in range(Ti-1):
-        s = grid_step(s,a)
+        s = grid_step(s,a,MOVE_NOISE)
         states.append(s)
-        beta = np.dot(eta(s), alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
+        beta = np.dot(eta(s, ETA_COEF), alpha[i]) + np.random.normal(scale=np.sqrt(sigsq[i]))
         if type(Q) == np.ndarray:
             a = np.random.choice(action_space, p = softmax(Q[s[0],s[1]], beta))
         else:
             a = np.random.choice(action_space, p = myo_policy(beta, s, TP,
               rewards))
         actions.append(a)
-    return list(multi_state_index(np.array(states))), actions
+    return list(multi_state_index(np.array(states), D)), actions
 
 
 def make_data(alpha, sigsq, rewards, N, Ti, state_space, action_space,
-              TP, m, Q=False):
+              TP, m, MOVE_NOISE, ETA_COEF, Q=False):
     '''
     Makes a list of N trajectories based on the given parameters and the
     myopic policy by default, or the Q-value-based policy if Q is provided.
     '''
     trajectories = [[synthetic_traj(rewards, alpha, sigsq, i, Ti, state_space,
-      action_space, TP, Q) for i in range(m)] for _ in range(N)]
+      action_space, TP, MOVE_NOISE, ETA_COEF, Q) for i in range(m)] for _ in range(N)]
     return trajectories 
 
 
@@ -219,7 +219,7 @@ def random_data(alpha, sigsq, rewards, N, Ti, state_space, action_space,
     '''
     trajectories = [
         [random_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
-                       TP, Q) for i in range(m)]
+                       TP, MOVE_NOISE, Q) for i in range(m)]
         for _ in range(N)
     ]
     return trajectories 
@@ -242,24 +242,24 @@ def visualize_policy(rewards, policy):
                       color="black",alpha=0.9)
 
 
-def mu_all(alpha):
+def mu_all(alpha, ETA_COEF):
     '''
     Visualizing mean of beta function for all states
     '''
     muvals = np.zeros((D,D))
     for i in range(D):
         for j in range(D):
-            muvals[i,j] = np.dot(eta((i,j)), alpha)
+            muvals[i,j] = np.dot(eta((i,j), ETA_COEF), alpha)
     return muvals
 
 
-def beta_func(alpha, sigsq):
+def beta_func(alpha, sigsq, ETA_COEF):
     '''
     Computes a sample of betas for whole state space.
     '''
     noise = np.random.normal(loc=0,scale=np.sqrt(sigsq),
       size=(D,D))
-    muvals = mu_all(alpha)
+    muvals = mu_all(alpha, ETA_COEF)
     return muvals + noise
 
 
@@ -304,7 +304,7 @@ def see_trajectory(reward_map, state_seq, state_space):
 ################################ Model functions #############################
 
 
-def psi_all_states(state_space, centers_x, centers_y):
+def psi_all_states(state_space, centers_x, centers_y, COEF):
     '''
     Basis functions for the entire state space
     '''
@@ -316,9 +316,9 @@ def psi_all_states(state_space, centers_x, centers_y):
     return np.concatenate((bases, inter), axis=1)
 
 
-def lin_rew_func(theta, state_space, centers_x, centers_y):
+def lin_rew_func(theta, state_space, centers_x, centers_y, COEF):
     return np.reshape(psi_all_states(state_space, centers_x,
-      centers_y).dot(theta), (D, D))
+      centers_y, COEF).dot(theta), (D, D))
     
 
 def arr_expect_reward(rewards, data, TP, state_space):
@@ -328,16 +328,17 @@ def arr_expect_reward(rewards, data, TP, state_space):
     return TP[data[:,0], data[:,1]].dot(np.ravel(rewards))
 
 
-def grad_lin_rew(data, state_space, centers_x, centers_y):
+def grad_lin_rew(data, state_space, centers_x, centers_y, TP, COEF):
     '''
     Gradient of reward function for array of states and actions
     '''
     probs = TP[data[:,0], data[:,1]]
     return np.swapaxes(probs.dot(psi_all_states(state_space, centers_x,
-      centers_y)), 1, 2)
+      centers_y, COEF)), 1, 2)
 
 
-def RE_all(reward_est, data, TP, state_space, m, centers_x, centers_y):
+def RE_all(reward_est, data, TP, state_space, m, centers_x, centers_y,
+           ETA_COEF):
     '''
     Expected reward and beta function bases (eta) for an array of states and
     actions.
@@ -451,15 +452,15 @@ def sigsq_grad_EM(gZ_sigsq, normals, Ti, sigsq, gnorm, denom, R_all, gvec):
 
 
 def theta_grad_EM(gZ_theta, data, state_space, R_all, E_all, sigsq, alpha,
-               centers_x, centers_y):
-    gradR = grad_lin_rew(data, state_space, centers_x, centers_y)
+               centers_x, centers_y, COEF):
+    gradR = grad_lin_rew(data, state_space, centers_x, centers_y, TP, COEF)
     X = sigsq[:,None]*R_all + np.einsum('ij,ijk->ik', alpha, E_all)
     result = -gZ_theta + np.einsum('ijk,ik->ij', gradR, X)[:,None,:]
     return np.sum(np.mean(result, axis=1), axis=0)
 
 
 def logZ(sigsq, normals, meanvec, denom, impa, reward_est, data, M, TP, R_all,
-         E_all, action_space, centers_x, centers_y, state_space, m, Ti):
+         E_all, action_space, centers_x, centers_y, state_space, m, Ti, COEF):
     '''
     Estimates of normalization constant and its gradient via importance
     sampling
@@ -471,7 +472,8 @@ def logZ(sigsq, normals, meanvec, denom, impa, reward_est, data, M, TP, R_all,
     lst = []
     for j in range(M):
         newdata = imp_samp_data(data, impa, j, m, Ti).astype(int)
-        feat_expect = grad_lin_rew(newdata, state_space, centers_x, centers_y)
+        feat_expect = grad_lin_rew(newdata, state_space, centers_x, centers_y,
+          TP, COEF)
         lst.append(feat_expect)
     gradR_Z = np.swapaxes(np.array(lst), 0, 1)
 
@@ -481,7 +483,7 @@ def logZ(sigsq, normals, meanvec, denom, impa, reward_est, data, M, TP, R_all,
     logZvec = lvec.sum(axis=2)
 
     # gradients of logZ
-    gradR = grad_lin_rew(data, state_space, centers_x, centers_y)
+    gradR = grad_lin_rew(data, state_space, centers_x, centers_y, TP, COEF)
     num1 = sigsq[:,None,None,None]*np.einsum('ijk,ilk->ijlk', R_Z, gradR)
     num2 = np.einsum('ijk,ilmk->ijlmk', meanvec, gradR_Z)
     expo = np.exp(bterm - np.max(bterm, axis=2)[:,:,None,:])
@@ -506,7 +508,7 @@ def logZ(sigsq, normals, meanvec, denom, impa, reward_est, data, M, TP, R_all,
 
 def MEIRL_EM(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
-         plot=False):
+         COEF, ETA_COEF, plot=False):
     '''
     Autoencoder algorithm with adaptive restart and Nesterov acceleration
     '''
@@ -536,14 +538,15 @@ def MEIRL_EM(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             
             data = np.array(traj_data[n])
             reward_est = lin_rew_func(y_theta, state_space, centers_x,
-              centers_y)
+              centers_y, COEF)
             R_all, E_all = RE_all(reward_est, data, TP, state_space, m,
-              centers_x, centers_y)
+              centers_x, centers_y, ETA_COEF)
             meanvec, denom, gvec, gnorm = grad_terms(normals,
               y_phi, y_alpha, y_sigsq, y_theta, data, R_all, E_all, Ti, m)
             logZvec, gZ_theta, gZ_alpha, gZ_sigsq, gZ_phi = logZ(y_sigsq,
               normals, meanvec, denom, impa, reward_est, data, M, TP, R_all,
-              E_all, action_space, centers_x, centers_y, state_space, m, Ti)
+              E_all, action_space, centers_x, centers_y, state_space, m, Ti,
+              COEF)
           
             logprobdiff = elbo(state_space, Ti, y_sigsq, gnorm, data, TP, m,
               normals, R_all, logZvec, meanvec, denom)
@@ -558,7 +561,7 @@ def MEIRL_EM(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
               
             g_phi = phi_grad_EM(y_phi, m, Ti, normals, denom, y_sigsq, gZ_phi)
             g_theta = theta_grad_EM(gZ_theta, data, state_space, R_all, E_all,
-              y_sigsq, y_alpha, centers_x, centers_y)
+              y_sigsq, y_alpha, centers_x, centers_y, COEF)
             g_alpha = alpha_grad_EM(gZ_alpha, E_all, R_all)
             g_sigsq = sigsq_grad_EM(gZ_sigsq, normals, Ti, y_sigsq, gnorm,
               denom, R_all, gvec)
@@ -605,20 +608,22 @@ def beta_grad_unif(gZ_beta, R_all):
     return -gZ_beta + R_all.sum(axis=1)
 
 
-def theta_grad_unif(data, beta, state_space, gZ_theta, centers_x, centers_y):
-    gradR = grad_lin_rew(data, state_space, centers_x, centers_y)
+def theta_grad_unif(data, beta, state_space, gZ_theta, centers_x, centers_y,
+                    COEF):
+    gradR = grad_lin_rew(data, state_space, centers_x, centers_y, TP, COEF)
     return -gZ_theta + (beta[:,None,None]*gradR).sum(axis=2).sum(axis=0)
 
 
 def logZ_unif(beta, impa, reward_est, data, M, TP, state_space, action_space,
-              m, Ti, centers_x, centers_y):
+              m, Ti, centers_x, centers_y, COEF):
     R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
       imp_samp_data(data, impa, j, m, Ti).astype(int),
       TP, state_space) for j in range(M)]), 0, 1)
     lst = []
     for j in range(M):
         newdata = imp_samp_data(data, impa, j, m, Ti).astype(int)
-        feat_expect = grad_lin_rew(newdata, state_space, centers_x, centers_y)
+        feat_expect = grad_lin_rew(newdata, state_space, centers_x, centers_y,
+          TP, COEF)
         lst.append(feat_expect)
     gradR_Z = np.swapaxes(np.array(lst), 0, 1)
     
@@ -638,7 +643,7 @@ def logZ_unif(beta, impa, reward_est, data, M, TP, state_space, action_space,
 
 def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
-         plot=False):
+         COEF, ETA_COEF, plot=False):
     impa = list(np.random.choice(action_space, M))
     lik = []
     theta_m = np.zeros_like(theta)
@@ -657,12 +662,12 @@ def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             
             data = np.array(traj_data[n])
             reward_est = lin_rew_func(y_theta, state_space, centers_x,
-              centers_y)
+              centers_y, COEF)
             R_all = RE_all(reward_est, data, TP, state_space, m,
-              centers_x, centers_y)[0]     
+              centers_x, centers_y, ETA_COEF)[0]     
             logZvec, gZ_theta, gZ_beta = logZ_unif(y_beta, impa, reward_est,
               data, M, TP, state_space, action_space, m, Ti, centers_x,
-              centers_y)
+              centers_y, COEF)
           
             loglikelihood = loglik(state_space, Ti, y_beta, data, TP, m, R_all,
               logZvec, unif=True).sum()
@@ -674,7 +679,7 @@ def MEIRL_unif(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                 best_beta = y_beta.copy()
               
             g_theta = theta_grad_unif(data, y_beta, state_space, gZ_theta,
-              centers_x, centers_y)
+              centers_x, centers_y, COEF)
             g_beta = beta_grad_unif(gZ_beta, R_all)
             
             g_theta = g_theta / np.linalg.norm(g_theta)
@@ -708,20 +713,22 @@ def alpha_grad_det(gZ_alpha, R_all, E_all):
     return -gZ_alpha + np.einsum('ijk,ik->ij', E_all, R_all)
 
 
-def theta_grad_det(data, beta, state_space, gZ_theta, centers_x, centers_y):
-    gradR = grad_lin_rew(data, state_space, centers_x, centers_y)
+def theta_grad_det(data, beta, state_space, gZ_theta, centers_x, centers_y,
+                   COEF):
+    gradR = grad_lin_rew(data, state_space, centers_x, centers_y, TP, COEF)
     return -gZ_theta + np.einsum('ij,ikj->k', beta, gradR)
 
 
 def logZ_det(beta, impa, reward_est, data, M, TP, R_all, E_all, state_space,
-             action_space, m, Ti, centers_x, centers_y):
+             action_space, m, Ti, centers_x, centers_y, COEF):
     R_Z = np.swapaxes(np.array([arr_expect_reward(reward_est,
                       imp_samp_data(data, impa, j, m, Ti).astype(int),
                       TP, state_space) for j in range(M)]), 0, 1)
     lst = []
     for j in range(M):
         newdata = imp_samp_data(data, impa, j, m, Ti).astype(int)
-        feat_expect = grad_lin_rew(newdata, state_space, centers_x, centers_y)
+        feat_expect = grad_lin_rew(newdata, state_space, centers_x, centers_y,
+          TP, COEF)
         lst.append(feat_expect)
     gradR_Z = np.swapaxes(np.array(lst), 0, 1)
     
@@ -749,7 +756,7 @@ def loglik(state_space, Ti, beta, data, TP, m, R_all, logZvec, unif=False):
 
 def MEIRL_det(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
-         plot=False):
+         COEF, ETA_COEF, plot=False):
     impa = list(np.random.choice(action_space, M))
     lik = []
     theta_m = np.zeros_like(theta)
@@ -768,14 +775,14 @@ def MEIRL_det(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
             
             data = np.array(traj_data[n])
             reward_est = lin_rew_func(y_theta, state_space, centers_x,
-              centers_y)
+              centers_y, COEF)
             R_all, E_all = RE_all(reward_est, data, TP, state_space, m,
-              centers_x, centers_y)
+              centers_x, centers_y, ETA_COEF)
             beta = np.einsum('ij,ijk->ik', y_alpha, E_all)
             
             logZvec, gZ_theta, gZ_alpha = logZ_det(beta,
               impa, reward_est, data, M, TP, R_all, E_all, state_space,
-              action_space, m, Ti, centers_x, centers_y)
+              action_space, m, Ti, centers_x, centers_y, COEF)
           
             loglikelihood = loglik(state_space, Ti, beta, data, TP, m, R_all,
               logZvec).sum()
@@ -787,7 +794,7 @@ def MEIRL_det(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                 best_alpha = y_alpha.copy()
               
             g_theta = theta_grad_det(data, beta, state_space, gZ_theta,
-              centers_x, centers_y)
+              centers_x, centers_y, COEF)
             g_alpha = alpha_grad_det(gZ_alpha, R_all, E_all)
             
             g_theta = g_theta / np.linalg.norm(g_theta)
@@ -828,15 +835,16 @@ def cumulative_reward(s_list, cr_reps, policy, T, state_space, action_space,
                       rewards):
     reward_list = []
     for i in range(cr_reps):
-        ret = episode(s_list[i], T, policy, rewards, action_space)[2]
+        ret = episode(s_list[i], T, policy, rewards, action_space,
+          MOVE_NOISE)[2]
         reward_list.extend(ret)
     return reward_list
 
 
 def evaluate_all(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                  action_space, B, m, M, Ti, N, learn_rate, reps, policy, T,
-                 rewards, init_Q, J, centers_x, centers_y, cr_reps, save=False,
-                 verbose=False):
+                 rewards, init_Q, J, centers_x, centers_y, cr_reps, COEF,
+                 ETA_COEF, save=False, verbose=False):
     '''
     With a random list of start states, computes J estimates of theta from 
     each algorithm, trains an optimal policy with respect to these estimates,
@@ -856,10 +864,10 @@ def evaluate_all(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
         for algo in [MEIRL_det, MEIRL_unif, MEIRL_EM, random_algo]:
             theta_stars.append(algo(theta, alpha, sigsq, phi, beta, traj_data,
               TP, state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
-              centers_x, centers_y)[0])
+              centers_x, centers_y, COEF, ETA_COEF)[0])
         for i in range(4):
             reward_est = lin_rew_func(theta_stars[i], state_space, centers_x,
-              centers_y)
+              centers_y, COEF)
             est_policy = value_iter(state_space, action_space, reward_est, TP,
               GAM, 1e-5)[0]
             est_rew = cumulative_reward(s_list, cr_reps, est_policy, T,
@@ -922,7 +930,7 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         d = D // 2 + 1
         state_space = np.array([(i,j) for i in range(D) for j in range(D)])
         action_space = list(range(4))
-        TP = transition(state_space, action_space)
+        TP = transition(state_space, action_space, D, MOVE_NOISE)
         
         alpha1 = np.array([WEIGHT, 0, 0, 0, 1])
         alpha2 = np.array([0, 0, WEIGHT, 0, 1])
@@ -948,7 +956,7 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         
         pdict['theta_true'] = 3*np.random.rand(D//2 + 1) - 2 
         rewards = lin_rew_func(pdict['theta_true'], state_space,
-          pdict['centers_x'], pdict['centers_y'])
+          pdict['centers_x'], pdict['centers_y'], COEF)
         sns.heatmap(rewards)
         plt.savefig('hyp_results/' + fname + '/' + 'true_reward.png',
             bbox_inches='tight')
@@ -966,11 +974,11 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
         pdict['theta'] = np.random.normal(size=d)
         
         traj_data = make_data(pdict['ex_alphas'], pdict['ex_sigsqs'], rewards,
-          N, Ti, state_space, action_space, TP, m)
+          N, Ti, state_space, action_space, TP, m, MOVE_NOISE, ETA_COEF)
         boltz_data = make_data(pdict['ex_alphas'], pdict['ex_sigsqs'], rewards,
-          N, Ti, state_space, action_space, TP, m, Q)
+          N, Ti, state_space, action_space, TP, m, MOVE_NOISE, ETA_COEF, Q)
         rand_data = random_data(pdict['ex_alphas'], pdict['ex_sigsqs'], rewards,
-          N, Ti, state_space, action_space, TP, m)
+          N, Ti, state_space, action_space, TP, m, MOVE_NOISE, ETA_COEF)
         
         if test_data == 'myo':
             dataset = traj_data
@@ -987,7 +995,7 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
           pdict['alpha'], pdict['sigsq'], pdict['phi'], pdict['beta'], dataset,
           TP, state_space, action_space, B, m, M, Ti, N, learn_rate, reps,
           opt_policy, T, rewards, init_Q, J, pdict['centers_x'],
-          pdict['centers_y'], cr_reps,
+          pdict['centers_y'], cr_reps, COEF, ETA_COEF,
           save=['hyp_results/' + fname + '/' + fname, param], verbose=verbose)
             
         f = open('hyp_results/' + fname + '/' + fname + '.txt', 'w')
@@ -1244,17 +1252,17 @@ def generate_figures(df):
     np.random.seed(99)
     alpha = np.array([2, 0, 0, 0, 1])
     sig = 0.1
-    sns.heatmap(mu_all(alpha))
+    sns.heatmap(mu_all(alpha, ETA_COEF))
     plt.savefig('figures/Fig2a.png', bbox_inches='tight')
     plt.show()
-    sns.heatmap(beta_func(alpha, sig))
+    sns.heatmap(beta_func(alpha, sig, ETA_COEF))
     plt.savefig('figures/Fig2c.png', bbox_inches='tight')
     plt.show()
     ETA_COEF = 0.5
-    sns.heatmap(mu_all(alpha))
+    sns.heatmap(mu_all(alpha, ETA_COEF))
     plt.savefig('figures/Fig2b.png', bbox_inches='tight')
     plt.show()
-    sns.heatmap(beta_func(alpha, sig))
+    sns.heatmap(beta_func(alpha, sig, ETA_COEF))
     plt.savefig('figures/Fig2d.png', bbox_inches='tight')
     plt.show()
 
@@ -1263,7 +1271,7 @@ def generate_figures(df):
 
 
 def random_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
-                   TP, Q=False):
+                   TP, MOVE_NOISE, Q=False):
     '''
     Trajectories based on a policy that selects every action with equal
     probability, used to check that performance of the algorithms degrades
@@ -1274,11 +1282,11 @@ def random_traj(rewards, alpha, sigsq, i, Ti, state_space, action_space,
     a = np.random.choice(action_space)
     actions = [a]
     for _ in range(Ti-1):
-        s = grid_step(s,a)
+        s = grid_step(s,a,MOVE_NOISE)
         states.append(s)
         a = np.random.choice(action_space)
         actions.append(a)
-    return list(multi_state_index(np.array(states))), actions
+    return list(multi_state_index(np.array(states), D)), actions
 
 
 def varying_hyp(df, hyp, algo, filt_dict=False, save=False):

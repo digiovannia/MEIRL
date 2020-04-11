@@ -1,5 +1,6 @@
 #%%
 import aux_funcs
+import timeit
 
 '''
 A simple DxD gridworld to test out multiple-experts IRL.
@@ -38,13 +39,19 @@ for i in range(10):
             id_num += 1
 '''
 
+df = aux_funcs.summary()
+aux_funcs.generate_figures(df)
+
+
+# %%
+
 setup = '''
-from aux_funcs import *
+import aux_funcs
 import numpy as np
 
 np.random.seed(20)
 
-hyparams = HYPARAMS
+hyparams = aux_funcs.HYPARAMS
 
 global D, MOVE_NOISE, INTERCEPT_ETA, WEIGHT, COEF
 global ETA_COEF, GAM, M, N, J, T, Ti, B, INTERCEPT_REW, TP
@@ -62,7 +69,9 @@ pdict = {}
 d = D // 2 + 1
 state_space = np.array([(i,j) for i in range(D) for j in range(D)])
 action_space = list(range(4))
-TP = transition(state_space, action_space)
+
+global TP
+TP = aux_funcs.transition(state_space, action_space, D, MOVE_NOISE)
 
 alpha1 = np.array([WEIGHT, 0, 0, 0, 1])
 alpha2 = np.array([0, 0, WEIGHT, 0, 1])
@@ -81,10 +90,10 @@ pdict['centers_x'] = np.random.choice(D, D//2)
 pdict['centers_y'] = np.random.choice(D, D//2)
 
 pdict['theta_true'] = 3*np.random.rand(D//2 + 1) - 2 
-rewards = lin_rew_func(pdict['theta_true'], state_space,
+rewards = aux_funcs.lin_rew_func(pdict['theta_true'], state_space,
   pdict['centers_x'], pdict['centers_y'])
 
-opt_policy, Q = value_iter(state_space, action_space, rewards, TP,
+opt_policy, Q = aux_funcs.value_iter(state_space, action_space, rewards, TP,
   GAM, 1e-5)
 
 pdict['phi'] = np.random.rand(m,2)
@@ -93,18 +102,24 @@ pdict['sigsq'] = np.random.rand(m)
 pdict['beta'] = np.random.rand(m)
 pdict['theta'] = np.random.normal(size=d)
 
-traj_data = make_data(pdict['ex_alphas'], pdict['ex_sigsqs'], rewards,
+traj_data = aux_funcs.make_data(pdict['ex_alphas'], pdict['ex_sigsqs'], rewards,
   N, Ti, state_space, action_space, TP, m)
-boltz_data = make_data(pdict['ex_alphas'], pdict['ex_sigsqs'], rewards,
+boltz_data = aux_funcs.make_data(pdict['ex_alphas'], pdict['ex_sigsqs'], rewards,
   N, Ti, state_space, action_space, TP, m, Q)
-rand_data = random_data(pdict['ex_alphas'], pdict['ex_sigsqs'], rewards,
+rand_data = aux_funcs.random_data(pdict['ex_alphas'], pdict['ex_sigsqs'], rewards,
   N, Ti, state_space, action_space, TP, m)
 
 dataset = traj_data
 '''
 
-df = aux_funcs.summary()
-aux_funcs.generate_figures(df)
+code = '''
+aux_funcs.MEIRL_det(pdict['theta'], pdict['alpha'], pdict['sigsq'], pdict['phi'],
+  pdict['beta'], dataset, TP, state_space, action_space, B, m, M, Ti, N,
+  learn_rate, reps, pdict['centers_x'], pdict['centers_y'])
+'''
 
+timeit.timeit(setup = setup, 
+                    stmt = code, 
+                    number = 10)
 
 # %%
