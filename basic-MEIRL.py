@@ -91,10 +91,10 @@ pdict['centers_y'] = np.random.choice(D, D//2)
 
 pdict['theta_true'] = 3*np.random.rand(D//2 + 1) - 2 
 rewards = aux_funcs.lin_rew_func(pdict['theta_true'], state_space,
-  pdict['centers_x'], pdict['centers_y'])
+  pdict['centers_x'], pdict['centers_y'], COEF, INTERCEPT_REW, D)
 
 opt_policy, Q = aux_funcs.value_iter(state_space, action_space, rewards, TP,
-  GAM, 1e-5)
+  GAM, 1e-5, D)
 
 pdict['phi'] = np.random.rand(m,2)
 pdict['alpha'] = np.random.normal(size=(m,p), scale=0.05)
@@ -103,19 +103,20 @@ pdict['beta'] = np.random.rand(m)
 pdict['theta'] = np.random.normal(size=d)
 
 traj_data = aux_funcs.make_data(pdict['ex_alphas'], pdict['ex_sigsqs'], rewards,
-  N, Ti, state_space, action_space, TP, m)
+  N, Ti, state_space, action_space, TP, m, MOVE_NOISE, ETA_COEF, D, INTERCEPT_ETA)
 boltz_data = aux_funcs.make_data(pdict['ex_alphas'], pdict['ex_sigsqs'], rewards,
-  N, Ti, state_space, action_space, TP, m, Q)
+  N, Ti, state_space, action_space, TP, m, MOVE_NOISE, ETA_COEF, D, INTERCEPT_ETA, Q)
 rand_data = aux_funcs.random_data(pdict['ex_alphas'], pdict['ex_sigsqs'], rewards,
-  N, Ti, state_space, action_space, TP, m)
+  N, Ti, state_space, action_space, TP, m, MOVE_NOISE, D)
 
 dataset = traj_data
 '''
 
 code = '''
-aux_funcs.MEIRL_det(pdict['theta'], pdict['alpha'], pdict['sigsq'], pdict['phi'],
+aux_funcs.MEIRL_EM(pdict['theta'], pdict['alpha'], pdict['sigsq'], pdict['phi'],
   pdict['beta'], dataset, TP, state_space, action_space, B, m, M, Ti, N,
-  learn_rate, reps, pdict['centers_x'], pdict['centers_y'])
+  learn_rate, reps, pdict['centers_x'], pdict['centers_y'],
+  COEF, ETA_COEF, INTERCEPT_REW, INTERCEPT_ETA, D)
 '''
 
 timeit.timeit(setup = setup, 
