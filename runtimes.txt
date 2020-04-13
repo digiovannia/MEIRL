@@ -1,0 +1,3 @@
+MEIRL-EM avg time over 100 runs = 22.93946365
+MEIRL-Det avg time over 100 runs = 3.552200025000002
+MEIRL-Unif avg time over 100 runs = 3.7388193259999935
