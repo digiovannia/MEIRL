@@ -107,5 +107,3 @@ f.write('MEIRL-EM avg time over 100 runs = ' + str(EM_time / 100) + '\n')
 f.write('MEIRL-Det avg time over 100 runs = ' + str(det_time / 100) + '\n')
 f.write('MEIRL-Unif avg time over 100 runs = ' + str(unif_time / 100) + '\n')
 f.close()
-
-# %%

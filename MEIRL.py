@@ -330,6 +330,9 @@ def psi_all_states(state_space, centers_x, centers_y, COEF, INTERCEPT_REW):
 
 def lin_rew_func(theta, state_space, centers_x, centers_y, COEF, INTERCEPT_REW,
                  D):
+    '''
+    Reward function D x D array
+    '''
     return np.reshape(psi_all_states(state_space, centers_x,
       centers_y, COEF, INTERCEPT_REW).dot(theta), (D, D))
     
@@ -355,7 +358,7 @@ def RE_all(reward_est, data, TP, state_space, m, centers_x, centers_y,
            ETA_COEF, INTERCEPT_ETA, D):
     '''
     Expected reward and beta function bases (eta) for an array of states and
-    actions.
+    actions
     '''
     # converting int representation of states to coordinates
     data_x = data[:,0,:] // D
@@ -400,7 +403,7 @@ def GD(phi, theta, alpha, sigsq, g_phi, g_theta, g_alpha, g_sigsq, learn_rate):
     return phi, theta, alpha, sigsq
 
 
-########################## MEIRL-EM model #############################
+############################### MEIRL-EM model #################################
 
 
 def grad_terms(normals, phi, alpha, sigsq, theta, data, R_all, E_all, Ti, m):
@@ -436,7 +439,7 @@ def elbo(state_space, Ti, sigsq, gnorm, data, TP, m, normals, R_all,
 In the gradient functions that follow, mean over an axis is for the Monte
 Carlo estimate of the expectation with respect to multivariate standard normal.
 Sum over an axis is over time steps in the trajectory, as well as over the
-4 experts in the case of theta_grad
+4 experts in the case of theta_grad.
 '''
 
 def phi_grad_EM(phi, m, Ti, normals, denom, sigsq, gZ_phi):
@@ -527,7 +530,8 @@ def MEIRL_EM(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
          action_space, B, m, M, Ti, N, learn_rate, reps, centers_x, centers_y,
          COEF, ETA_COEF, INTERCEPT_REW, INTERCEPT_ETA, D, plot=False):
     '''
-    Autoencoder algorithm with adaptive restart and Nesterov acceleration
+    Evidence lower bound optimization algorithm with adaptive restart and
+    Nesterov acceleration
     '''
     impa = list(np.random.choice(action_space, M)) # uniformly sampled actions
     elbos = []
@@ -845,6 +849,10 @@ def random_algo(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                 action_space, B, m, M, Ti, N, learn_rate, reps, centers_x,
                 centers_y, COEF, ETA_COEF, INTERCEPT_REW, INTERCEPT_ETA, D,
                 plot=False):
+    '''
+    Random theta (this function is constructed for ease in iteration over the
+    list of algorithms in evaluate_all)
+    '''
     return (np.random.normal(size=theta.shape), 0)
 
 
@@ -853,6 +861,10 @@ def random_algo(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
 
 def cumulative_reward(s_list, cr_reps, policy, T, state_space, action_space,
                       rewards, D):
+    '''
+    For a given list of initial states and policy, executes this policy from
+    these states and reports the cumulative reward for each episode
+    '''
     reward_list = []
     for i in range(cr_reps):
         ret = episode(s_list[i], T, policy, rewards, action_space,
@@ -866,10 +878,11 @@ def evaluate_all(theta, alpha, sigsq, phi, beta, traj_data, TP, state_space,
                  rewards, init_Q, J, centers_x, centers_y, cr_reps, COEF,
                  ETA_COEF, INTERCEPT_REW, D, save=False, verbose=False):
     '''
-    With a random list of start states, computes J estimates of theta from 
-    each algorithm, trains an optimal policy with respect to these estimates,
-    and records the reward obtained from episodes following these policies on
-    the start states (as well as reward from a policy trained on true theta).
+    With a random list of start states:
+    * computes J estimates of theta from each algorithm
+    * trains an optimal policy with respect to these estimates
+    * records the reward obtained from episodes following these policies on
+    the start states (as well as reward from a policy trained on true theta)
     '''
     start = datetime.datetime.now()
     s_list = [state_space[np.random.choice(len(state_space))] for _ in range(cr_reps)]
@@ -927,6 +940,11 @@ def results_var_hyper(id_num, param, par_vals, seed, test_data='myo',
      * green = MEIRL_unif
      * black = MEIRL_EM
      * magenta = random theta
+
+    #3 and #4 were used to assess whether performance of the algorithms on
+    Boltzmann data could be explained by coinciding actions in the trajectories
+    from the two data policies, however these were excluded from the final
+    report due to space constraints.
     '''
     SEED_NUM = seed
     for par in par_vals:
@@ -1077,7 +1095,7 @@ def summary():
     for fo in res_folds:
         direc = 'hyp_results/' + fo
         files = os.listdir(direc)
-        if len(files) == 5: # indicates all the necessary data was recorded:
+        if len(files) == 5: # indicates all the necessary data was recorded
             textfile = sorted(os.listdir(direc))[0]
             with open(direc + '/' + textfile) as f:
                 for line in f:
@@ -1117,11 +1135,10 @@ def average_within_algo(df, filt_dict=False, save=False):
     x = np.arange(5)*0.5
     y = [np.mean(data[performance[i]]) for i in range(len(performance))]
     fig, ax = plt.subplots()
-    plt.bar(x, y, color=colors, width=0.5)#, width=1.2)
+    plt.bar(x, y, color=colors, width=0.5)
     
     ax.set_xticks(x)
     ax.set_xticklabels(names, {'fontsize': 12})
-    #plt.xticks(rotation=45)
     plt.tight_layout()
     if save:
         plt.savefig('figures/' + save, bbox_inches='tight')
